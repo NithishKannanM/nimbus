@@ -1,0 +1,94 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    background: theme("colors.paper");
+  }
+
+  body {
+    @apply bg-paper text-ink;
+    font-family: theme("fontFamily.legend");
+    /* Tabular figures everywhere. A readout whose digits change width is a
+       readout that twitches every time the value changes. */
+    font-variant-numeric: tabular-nums;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Graph-paper ruling, printed on the stock before any pen touches it. Two
+     grids: a fine 8px weave and a heavier 40px division, exactly as engineering
+     paper is milled. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background-image:
+      linear-gradient(theme("colors.rule") 1px, transparent 1px),
+      linear-gradient(90deg, theme("colors.rule") 1px, transparent 1px),
+      linear-gradient(theme("colors.rule") 1px, transparent 1px),
+      linear-gradient(90deg, theme("colors.rule") 1px, transparent 1px);
+    background-size: 40px 40px, 40px 40px, 8px 8px, 8px 8px;
+    opacity: 0.34;
+  }
+
+  :focus-visible {
+    outline: 2px solid theme("colors.reserved");
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  /* A legend plate: the engraved label beside an instrument's dial. */
+  .legend {
+    @apply font-legend text-[10px] font-600 uppercase tracking-legend text-declared;
+  }
+
+  .plate {
+    @apply relative border border-ink/15 bg-paper/80 backdrop-blur-[1px];
+  }
+}
+
+@layer utilities {
+  .font-600 {
+    font-weight: 600;
+  }
+}
+
+/* The pen laying down ink. One orchestrated moment on load, and nothing else
+   moves except the data itself. */
+@keyframes draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes ink-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.pen {
+  stroke-dasharray: var(--len);
+  stroke-dashoffset: var(--len);
+  animation: draw 1100ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.band {
+  animation: ink-in 700ms 700ms ease-out backwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pen,
+  .band {
+    animation: none;
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+}

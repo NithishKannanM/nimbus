@@ -1,0 +1,75 @@
+#!/bin/bash
+# Control-plane bootstrap: the API and the scheduler loop.
+#
+# Deliberately plain. There is no container runtime here because the control
+# plane is one Python process and a container would add an image build, a
+# registry, and a pull to every deploy for no isolation benefit -- the workers
+# are where untrusted-ish work runs, and they are separated by instance and by
+# IAM role rather than by namespace.
+set -euxo pipefail
+
+dnf install -y python3.12 python3.12-pip git amazon-cloudwatch-agent
+
+install -d -o ec2-user -g ec2-user /opt/nimbus
+cd /opt/nimbus
+
+# The repository is expected to be delivered here by the deploy script
+# (scripts/demo/deploy.sh rsyncs it) rather than cloned, so a deployment always
+# matches the working tree that produced it. A git clone would introduce a
+# window in which the deployed code and the local code disagree, and every
+# benchmark manifest records a git sha on the assumption they do not.
+if [ ! -f /opt/nimbus/requirements.txt ]; then
+  echo "waiting for application payload at /opt/nimbus" >&2
+fi
+
+cat > /etc/nimbus.env <<'ENVEOF'
+%{ for key, value in env ~}
+${key}=${value}
+%{ endfor ~}
+NIMBUS_ENABLE_ADMIN=${enable_admin}
+ENVEOF
+chmod 0640 /etc/nimbus.env
+
+cat > /etc/systemd/system/nimbus-api.service <<'UNITEOF'
+[Unit]
+Description=Nimbus control plane (API + scheduler)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ec2-user
+WorkingDirectory=/opt/nimbus
+EnvironmentFile=/etc/nimbus.env
+ExecStartPre=/usr/bin/python3.12 -m pip install --user -r requirements.txt -r requirements-aws.txt
+ExecStart=/usr/bin/python3.12 -m uvicorn backend.api.app:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+UNITEOF
+
+cat > /opt/aws/amazon-cloudwatch-agent/bin/config.json <<'CWEOF'
+{
+  "logs": {
+    "logs_collected": {
+      "files": {
+        "collect_list": [
+          {
+            "file_path": "/var/log/messages",
+            "log_group_name": "${log_group}",
+            "log_stream_name": "{instance_id}/system"
+          }
+        ]
+      }
+    }
+  }
+}
+CWEOF
+
+/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+  -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/bin/config.json
+
+systemctl daemon-reload
+systemctl enable --now nimbus-api.service

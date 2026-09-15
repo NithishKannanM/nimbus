@@ -1,0 +1,164 @@
+{
+  "homogeneous_saturated": {
+    "fifo": {
+      "makespan_median": 9.3396,
+      "makespan_runs": [
+        8.9567,
+        11.6589,
+        9.3396,
+        9.1919,
+        9.6859
+      ],
+      "throughput_median": 6.4243,
+      "p95_median": 4620.903,
+      "util_cv_median": 0.047581,
+      "fleet_util_median": 0.823982,
+      "tie_rate": 0.0,
+      "switch_rate": 0.576271,
+      "concentration_max": 1.0,
+      "algorithm_version": "round-robin-v1"
+    },
+    "static_resource_aware": {
+      "makespan_median": 10.214,
+      "makespan_runs": [
+        10.7572,
+        10.2566,
+        10.0254,
+        9.1956,
+        10.214
+      ],
+      "throughput_median": 5.8743,
+      "p95_median": 5174.395,
+      "util_cv_median": 0.040898,
+      "fleet_util_median": 0.830592,
+      "tie_rate": 0.545455,
+      "switch_rate": 0.440678,
+      "concentration_max": 1.0,
+      "algorithm_version": "static-v1"
+    },
+    "adaptive": {
+      "makespan_median": 8.8887,
+      "makespan_runs": [
+        10.4625,
+        11.2041,
+        8.4789,
+        8.3439,
+        8.8887
+      ],
+      "throughput_median": 6.7501,
+      "p95_median": 4410.56,
+      "util_cv_median": 0.055728,
+      "fleet_util_median": 0.830912,
+      "tie_rate": 0.333333,
+      "switch_rate": 0.457627,
+      "concentration_max": 1.0,
+      "algorithm_version": "adaptive-v1"
+    },
+    "static_resource_aware_binpack": {
+      "makespan_median": 9.7996,
+      "makespan_runs": [
+        9.7996,
+        9.8212,
+        8.5117,
+        10.3059,
+        9.118
+      ],
+      "throughput_median": 6.1227,
+      "p95_median": 4732.603,
+      "util_cv_median": 0.086982,
+      "fleet_util_median": 0.833323,
+      "tie_rate": 0.272727,
+      "switch_rate": 0.491525,
+      "concentration_max": 0.833333,
+      "algorithm_version": "static-v1"
+    },
+    "_comparison": {
+      "best_baseline": "fifo",
+      "makespan_delta_pct": -4.83,
+      "ranges_disjoint": false,
+      "material": false,
+      "verdict": "no meaningful observed difference"
+    }
+  },
+  "cpu_pressure": {
+    "fifo": {
+      "makespan_median": 31.4924,
+      "makespan_runs": [
+        31.4924,
+        45.8288,
+        30.8239,
+        12.5922,
+        43.4222
+      ],
+      "throughput_median": 1.9052,
+      "p95_median": 3373.574,
+      "util_cv_median": 0.861172,
+      "fleet_util_median": 0.288845,
+      "tie_rate": 0.0,
+      "switch_rate": 0.779661,
+      "concentration_max": 0.8,
+      "algorithm_version": "round-robin-v1"
+    },
+    "static_resource_aware": {
+      "makespan_median": 12.5765,
+      "makespan_runs": [
+        45.3935,
+        11.0785,
+        13.2264,
+        12.5765,
+        11.8177
+      ],
+      "throughput_median": 4.7708,
+      "p95_median": 3323.797,
+      "util_cv_median": 0.202219,
+      "fleet_util_median": 0.348914,
+      "tie_rate": 0.404762,
+      "switch_rate": 0.576271,
+      "concentration_max": 0.833333,
+      "algorithm_version": "static-v1"
+    },
+    "adaptive": {
+      "makespan_median": 31.0566,
+      "makespan_runs": [
+        32.1124,
+        32.8123,
+        11.8953,
+        11.8747,
+        31.0566
+      ],
+      "throughput_median": 1.932,
+      "p95_median": 2381.224,
+      "util_cv_median": 0.644216,
+      "fleet_util_median": 0.292979,
+      "tie_rate": 0.043478,
+      "switch_rate": 0.576271,
+      "concentration_max": 0.833333,
+      "algorithm_version": "adaptive-v1"
+    },
+    "static_resource_aware_binpack": {
+      "makespan_median": 40.5941,
+      "makespan_runs": [
+        31.9783,
+        46.1599,
+        11.4238,
+        40.5941,
+        45.5069
+      ],
+      "throughput_median": 1.478,
+      "p95_median": 3456.023,
+      "util_cv_median": 1.070721,
+      "fleet_util_median": 0.272546,
+      "tie_rate": 0.307692,
+      "switch_rate": 0.474576,
+      "concentration_max": 1.0,
+      "algorithm_version": "static-v1"
+    },
+    "_comparison": {
+      "best_baseline": "static_resource_aware",
+      "makespan_delta_pct": 146.94,
+      "ranges_disjoint": false,
+      "material": false,
+      "verdict": "no meaningful observed difference"
+    }
+  }
+}

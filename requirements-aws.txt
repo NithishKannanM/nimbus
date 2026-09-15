@@ -1,0 +1,8 @@
+# AWS backend only (NIMBUS_BACKEND=aws, Phase 5).
+#
+# Kept out of requirements.txt on purpose. Phases 1-4 and the whole benchmark
+# harness run with no AWS dependency at all, and boto3 pulls in botocore's
+# service models -- tens of megabytes, and about a second of import time that
+# would otherwise land on every local test run.
+-r requirements.txt
+boto3>=1.35

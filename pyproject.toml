@@ -1,0 +1,16 @@
+[project]
+name = "nimbus"
+version = "0.1.0"
+description = "Telemetry-aware adaptive workload scheduling on AWS -- an experimental cloud/distributed-systems project"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+markers = [
+    "slow: long-running tests (external pressure, benchmark-scale runs)",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

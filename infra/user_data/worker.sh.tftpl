@@ -1,0 +1,75 @@
+#!/bin/bash
+# Worker bootstrap: the data plane.
+#
+# This host has no SQS and no DynamoDB permissions (infra/iam.tf). It receives
+# work only by push dispatch from the scheduler on :8080, which is the one port
+# its security group opens, and only from the control plane's security group.
+# The control/data-plane split is enforced here by IAM and by the network, not
+# by the worker's own restraint.
+set -euxo pipefail
+
+dnf install -y python3.12 python3.12-pip amazon-cloudwatch-agent
+
+install -d -o ec2-user -g ec2-user /opt/nimbus /var/lib/nimbus/scratch
+chown ec2-user:ec2-user /var/lib/nimbus/scratch
+
+cat > /etc/nimbus.env <<'ENVEOF'
+%{ for key, value in env ~}
+${key}=${value}
+%{ endfor ~}
+NIMBUS_ROLE=worker
+NIMBUS_SCRATCH_DIR=/var/lib/nimbus/scratch
+ENVEOF
+chmod 0640 /etc/nimbus.env
+
+cat > /etc/systemd/system/nimbus-worker.service <<'UNITEOF'
+[Unit]
+Description=Nimbus worker agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ec2-user
+WorkingDirectory=/opt/nimbus
+EnvironmentFile=/etc/nimbus.env
+# One BLAS thread per job, set here as well as in worker/executor.py. numpy
+# reads these at import time, and a multi-threaded matmul would let one job
+# consume every core on a host the scheduler believes is half idle -- which
+# invalidates every load-balance measurement in the project.
+Environment=OMP_NUM_THREADS=1
+Environment=OPENBLAS_NUM_THREADS=1
+Environment=MKL_NUM_THREADS=1
+Environment=NUMEXPR_NUM_THREADS=1
+ExecStartPre=/usr/bin/python3.12 -m pip install --user -r requirements.txt -r requirements-aws.txt
+ExecStart=/usr/bin/python3.12 -m uvicorn worker.api:app --host 0.0.0.0 --port 8080
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+UNITEOF
+
+cat > /opt/aws/amazon-cloudwatch-agent/bin/config.json <<'CWEOF'
+{
+  "logs": {
+    "logs_collected": {
+      "files": {
+        "collect_list": [
+          {
+            "file_path": "/var/log/messages",
+            "log_group_name": "${log_group}",
+            "log_stream_name": "{instance_id}/system"
+          }
+        ]
+      }
+    }
+  }
+}
+CWEOF
+
+/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+  -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/bin/config.json
+
+systemctl daemon-reload
+systemctl enable --now nimbus-worker.service

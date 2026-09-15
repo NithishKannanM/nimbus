@@ -1,0 +1,326 @@
+{
+  "homogeneous_saturated": {
+    "fifo": {
+      "makespan_median": 8.8947,
+      "makespan_runs": [
+        8.8947,
+        8.5798,
+        11.4195,
+        8.3317,
+        9.3353
+      ],
+      "throughput_median": 6.7456,
+      "p95_median": 4114.607,
+      "util_cv_median": 0.049352,
+      "fleet_util_median": 0.830013,
+      "tie_rate": 0.0,
+      "switch_rate": 0.559322,
+      "concentration_max": 1.0,
+      "algorithm_version": "round-robin-v1"
+    },
+    "static_resource_aware": {
+      "makespan_median": 10.1929,
+      "makespan_runs": [
+        10.35,
+        10.1929,
+        9.1441,
+        9.3793,
+        10.7731
+      ],
+      "throughput_median": 5.8864,
+      "p95_median": 5329.969,
+      "util_cv_median": 0.02669,
+      "fleet_util_median": 0.807754,
+      "tie_rate": 0.5,
+      "switch_rate": 0.508475,
+      "concentration_max": 1.0,
+      "algorithm_version": "static-v1"
+    },
+    "adaptive": {
+      "makespan_median": 9.5723,
+      "makespan_runs": [
+        9.2435,
+        10.1672,
+        9.5723,
+        8.84,
+        10.8256
+      ],
+      "throughput_median": 6.2681,
+      "p95_median": 5201.431,
+      "util_cv_median": 0.049816,
+      "fleet_util_median": 0.819749,
+      "tie_rate": 0.285714,
+      "switch_rate": 0.491525,
+      "concentration_max": 1.0,
+      "algorithm_version": "adaptive-v1"
+    },
+    "static_resource_aware_binpack": {
+      "makespan_median": 10.0831,
+      "makespan_runs": [
+        10.9466,
+        10.7155,
+        10.0831,
+        8.4873,
+        8.0537
+      ],
+      "throughput_median": 5.9505,
+      "p95_median": 5773.712,
+      "util_cv_median": 0.07968,
+      "fleet_util_median": 0.823589,
+      "tie_rate": 0.461538,
+      "switch_rate": 0.491525,
+      "concentration_max": 1.0,
+      "algorithm_version": "static-v1"
+    },
+    "_comparison": {
+      "best_baseline": "fifo",
+      "makespan_delta_pct": 7.62,
+      "ranges_disjoint": false,
+      "material": false,
+      "verdict": "no meaningful observed difference"
+    }
+  },
+  "memory_pressure": {
+    "fifo": {
+      "makespan_median": 16.3627,
+      "makespan_runs": [
+        17.5351,
+        16.6552,
+        16.3627,
+        16.3207,
+        16.1515
+      ],
+      "throughput_median": 3.6669,
+      "p95_median": 1846.057,
+      "util_cv_median": 0.380075,
+      "fleet_util_median": 0.294379,
+      "tie_rate": 0.0,
+      "switch_rate": 0.983051,
+      "concentration_max": 0.5,
+      "algorithm_version": "round-robin-v1"
+    },
+    "static_resource_aware": {
+      "makespan_median": 16.1531,
+      "makespan_runs": [
+        16.4979,
+        16.5916,
+        15.7324,
+        15.6891,
+        16.1531
+      ],
+      "throughput_median": 3.7145,
+      "p95_median": 1670.44,
+      "util_cv_median": 0.124988,
+      "fleet_util_median": 0.266998,
+      "tie_rate": 0.714286,
+      "switch_rate": 0.576271,
+      "concentration_max": 1.0,
+      "algorithm_version": "static-v1"
+    },
+    "adaptive": {
+      "makespan_median": 15.8398,
+      "makespan_runs": [
+        16.7049,
+        16.5712,
+        15.8398,
+        15.5814,
+        15.6607
+      ],
+      "throughput_median": 3.7879,
+      "p95_median": 1610.024,
+      "util_cv_median": 0.185753,
+      "fleet_util_median": 0.288609,
+      "tie_rate": 0.034483,
+      "switch_rate": 0.694915,
+      "concentration_max": 1.0,
+      "algorithm_version": "adaptive-v1"
+    },
+    "static_resource_aware_binpack": {
+      "makespan_median": 15.9279,
+      "makespan_runs": [
+        16.3431,
+        15.9301,
+        15.9279,
+        15.7275,
+        15.6716
+      ],
+      "throughput_median": 3.767,
+      "p95_median": 1321.438,
+      "util_cv_median": 0.65877,
+      "fleet_util_median": 0.240357,
+      "tie_rate": 0.490909,
+      "switch_rate": 0.271186,
+      "concentration_max": 1.0,
+      "algorithm_version": "static-v1"
+    },
+    "_comparison": {
+      "best_baseline": "static_resource_aware_binpack",
+      "makespan_delta_pct": -0.55,
+      "ranges_disjoint": false,
+      "material": false,
+      "verdict": "no meaningful observed difference"
+    }
+  },
+  "heavy_tail": {
+    "fifo": {
+      "makespan_median": 10.0295,
+      "makespan_runs": [
+        10.0186,
+        10.0022,
+        10.1099,
+        10.1132,
+        10.0295
+      ],
+      "throughput_median": 5.9823,
+      "p95_median": 914.07,
+      "util_cv_median": 0.402023,
+      "fleet_util_median": 0.163023,
+      "tie_rate": 0.0,
+      "switch_rate": 0.966102,
+      "concentration_max": 0.5,
+      "algorithm_version": "round-robin-v1"
+    },
+    "static_resource_aware": {
+      "makespan_median": 10.0105,
+      "makespan_runs": [
+        10.0198,
+        10.0072,
+        10.0078,
+        10.0105,
+        10.0108
+      ],
+      "throughput_median": 5.9937,
+      "p95_median": 622.718,
+      "util_cv_median": 0.720816,
+      "fleet_util_median": 0.143524,
+      "tie_rate": 0.75,
+      "switch_rate": 0.644068,
+      "concentration_max": 1.0,
+      "algorithm_version": "static-v1"
+    },
+    "adaptive": {
+      "makespan_median": 10.103,
+      "makespan_runs": [
+        10.103,
+        10.1115,
+        10.1079,
+        10.0995,
+        10.0181
+      ],
+      "throughput_median": 5.9388,
+      "p95_median": 732.006,
+      "util_cv_median": 0.189228,
+      "fleet_util_median": 0.167135,
+      "tie_rate": 0.033898,
+      "switch_rate": 0.677966,
+      "concentration_max": 0.833333,
+      "algorithm_version": "adaptive-v1"
+    },
+    "static_resource_aware_binpack": {
+      "makespan_median": 10.0192,
+      "makespan_runs": [
+        10.0192,
+        10.0251,
+        9.9942,
+        10.0383,
+        10.0183
+      ],
+      "throughput_median": 5.9885,
+      "p95_median": 589.565,
+      "util_cv_median": 1.467961,
+      "fleet_util_median": 0.145206,
+      "tie_rate": 0.633333,
+      "switch_rate": 0.169492,
+      "concentration_max": 1.0,
+      "algorithm_version": "static-v1"
+    },
+    "_comparison": {
+      "best_baseline": "static_resource_aware",
+      "makespan_delta_pct": 0.92,
+      "ranges_disjoint": false,
+      "material": false,
+      "verdict": "no meaningful observed difference"
+    }
+  },
+  "burst": {
+    "fifo": {
+      "makespan_median": 13.2773,
+      "makespan_runs": [
+        12.9904,
+        13.3171,
+        13.2773,
+        13.1462,
+        13.2875
+      ],
+      "throughput_median": 4.519,
+      "p95_median": 6042.494,
+      "util_cv_median": 0.076651,
+      "fleet_util_median": 0.514877,
+      "tie_rate": 0.0,
+      "switch_rate": 0.677966,
+      "concentration_max": 0.75,
+      "algorithm_version": "round-robin-v1"
+    },
+    "static_resource_aware": {
+      "makespan_median": 12.9833,
+      "makespan_runs": [
+        12.9833,
+        12.985,
+        13.0011,
+        12.9744,
+        12.9731
+      ],
+      "throughput_median": 4.6213,
+      "p95_median": 5082.194,
+      "util_cv_median": 0.131906,
+      "fleet_util_median": 0.489614,
+      "tie_rate": 0.666667,
+      "switch_rate": 0.474576,
+      "concentration_max": 1.0,
+      "algorithm_version": "static-v1"
+    },
+    "adaptive": {
+      "makespan_median": 12.9817,
+      "makespan_runs": [
+        12.9817,
+        12.9674,
+        12.978,
+        13.3036,
+        13.2729
+      ],
+      "throughput_median": 4.6219,
+      "p95_median": 5325.056,
+      "util_cv_median": 0.103064,
+      "fleet_util_median": 0.496387,
+      "tie_rate": 0.058824,
+      "switch_rate": 0.491525,
+      "concentration_max": 1.0,
+      "algorithm_version": "adaptive-v1"
+    },
+    "static_resource_aware_binpack": {
+      "makespan_median": 12.9777,
+      "makespan_runs": [
+        12.9967,
+        12.9844,
+        12.9777,
+        12.9672,
+        12.9722
+      ],
+      "throughput_median": 4.6233,
+      "p95_median": 5316.174,
+      "util_cv_median": 0.132938,
+      "fleet_util_median": 0.498964,
+      "tie_rate": 0.5625,
+      "switch_rate": 0.440678,
+      "concentration_max": 1.0,
+      "algorithm_version": "static-v1"
+    },
+    "_comparison": {
+      "best_baseline": "static_resource_aware_binpack",
+      "makespan_delta_pct": 0.03,
+      "ranges_disjoint": false,
+      "material": false,
+      "verdict": "no meaningful observed difference"
+    }
+  }
+}

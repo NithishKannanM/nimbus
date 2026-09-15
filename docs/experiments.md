@@ -1,0 +1,687 @@
+# Nimbus Experimental Methodology
+
+The benchmark framework is a first-class deliverable, equal in importance to the
+scheduler (brief §19). Its job is to produce **evidence**, in either direction.
+
+---
+
+> **Phase 3 pre-registration:** the adaptive-v1 formula, weights, smoothing
+> window, freshness policy, repetition count and success criteria were fixed in
+> [`adaptive-v1-preregistration.md`](./adaptive-v1-preregistration.md) *before*
+> the algorithm was implemented and before any Phase 3 experiment ran.
+
+## 1. Hypothesis
+
+> **H1.** For heterogeneous workloads running on workers with dynamically
+> changing resource utilization, scheduling decisions based on real-time
+> telemetry and workload characteristics may improve job completion latency,
+> worker utilization and load balance compared with simple FIFO or static
+> priority scheduling.
+
+Operationalised as three testable sub-hypotheses, each with a **pre-registered
+direction and a null**:
+
+| ID | Claim | Primary metric | Null |
+|---|---|---|---|
+| H1a | Adaptive reduces tail completion latency vs. FIFO | p95 completion time | no difference |
+| H1b | Adaptive improves load balance vs. FIFO | CV of worker busy-time | no difference |
+| H1c | Adaptive beats *Static Resource-Aware* — i.e. live telemetry adds something over reservation accounting | p95 completion time | no difference |
+
+**H1c is the real test.** H1a and H1b compare against straw men that ignore
+resources entirely; beating them is close to arithmetic. If Adaptive beats FIFO
+but not Resource-Aware, the honest conclusion is *"resource awareness helps;
+live telemetry does not add measurable value on these workloads"* — and that is
+a publishable result, not a failure.
+
+Decided in advance: **α = 0.05**, two-sided, and a **≥5% relative improvement**
+in the primary metric is required to call a result *practically* significant, in
+addition to statistical significance.
+
+---
+
+## 2. Experimental design
+
+### 2.1 Controls
+
+Held constant across every strategy within a comparison:
+
+- The **same job sequence** — same types, sizes, priorities, arrival times —
+  regenerated from the same seed. Paired design: strategy is the only variable.
+- The same fleet (3 workers, identical instance type, identical slot count).
+- The same measurement code path and the same clock source.
+- The same warm-up: 10 discarded jobs before measurement begins, so that runtime
+  history, page cache and interpreter JIT state are comparable.
+
+### 2.2 Trials and ordering
+
+- **N = 5 trials minimum** per (profile × strategy); N = 10 for the headline.
+- **Strategy order is randomised within each trial** (Latin-square-ish rotation),
+  so a machine that heats up or a background process that starts halfway through
+  does not systematically favour whichever strategy runs last.
+- Each trial starts from a **cold fleet** (workers restarted, runtime history
+  cleared unless the experiment is explicitly about history accumulation).
+
+### 2.3 Statistics
+
+- Report **median and IQR**, not mean and SD — completion times are right-skewed
+  and a mean is misleading.
+- Paired comparison across trials → **Wilcoxon signed-rank test** (non-parametric;
+  no normality assumption).
+- Report **bootstrap 95% CI** on the median difference (10,000 resamples).
+- Report **effect size** (Cliff's delta) alongside p-values.
+- **Bonferroni-correct** across the strategy pairs compared within one profile.
+- **N, seed, and the raw file path** accompany every number in the report.
+
+### 2.4 Reproducibility
+
+Every run writes a manifest (`benchmark/manifest.py`):
+
+```json
+{
+  "experiment_id": "exp-907258df",
+  "seed": 1337,
+  "ordering": "fifo",
+  "placement": "static_resource_aware",
+  "strategy": "static_resource_aware",
+  "telemetry": true,
+  "telemetry_interval_s": 1.0,
+  "workers": 3,
+  "worker_slots": 2,
+  "worker_cores": { "worker-1": [0,1,2,3,4,5], "worker-2": [6,7,8,9,10,11],
+                    "worker-3": [12,13,14,15,16,17] },
+  "declared_cpu_units": 2048,
+  "declared_memory_mb": 4096,
+  "profile": "cpu_pressure",
+  "job_count": 60,
+  "size_scale": 1.0,
+  "pressure": [ { "kind": "cpu", "target_worker": "worker-1", "intensity": 1.0,
+                  "cores": [0,1,2,3,4,5], "backend": "builtin", "processes": 6 } ],
+  "pressure_backend": "builtin",
+  "trial": 0,
+  "config": { "...": "full NimbusConfig dump" },
+  "job_plan": [ { "index": 0, "job_type": "prime_count", "payload": {"limit": 812345},
+                  "priority": 3, "arrival_offset_s": 0.184 } ],
+  "git_commit": null,
+  "host": { "platform": "...", "cpu_count_logical": 20, "total_memory_gb": 15.4 },
+  "started_at": "...", "finished_at": "..."
+}
+```
+
+`git_commit` is `null` when the tree is not a git repository — recorded honestly
+rather than omitted, because a run without a commit hash is less reproducible
+and the report should say so.
+
+alongside `raw.jsonl`, `decisions.jsonl` and `telemetry.jsonl`
+(`architecture.md` §9). **No figure or table may appear in the report unless it
+can be regenerated by `benchmark/analysis.py` from an archived raw file.**
+
+---
+
+## 3. Workload profiles
+
+**Status: implemented (Phase 2).** `benchmark/profiles.py`, `benchmark/generator.py`.
+
+`generate(profile, job_count, seed)` is a pure function: the same triple always
+produces a byte-identical job list, so two strategies run on a literally
+identical workload rather than on two samples from the same distribution.
+Asserted by `tests/unit/test_generator.py`.
+
+| Profile | Mix | Arrivals | Sizes | External pressure | Purpose |
+|---|---|---|---|---|---|
+| `homogeneous_saturated` | balanced 25/25/25/25 | Poisson, 8/s | uniform | none | **A.** Control. Static placement is expected to do well; that is the point. |
+| `cpu_pressure` | 70% CPU | Poisson, 6/s | uniform | CPU on `worker-1` | **B.** Host state diverges from the reserved model. Static must not react; telemetry must record. |
+| `memory_pressure` | 70% memory | Poisson, 4/s | uniform | 1 GB resident on the host | **C.** Same divergence, memory. |
+| `heavy_tail` | 40/20/30/10 | Poisson, 6/s | **Pareto** (α=1.5) | none | **D.** Many short, some medium, a few very long. Head-of-line blocking. |
+| `burst` | balanced | quiet 2/s then **30 jobs at once** | uniform | none | **E.** Step change in offered load; queue behaviour. |
+
+`size_scale` shrinks every intensity parameter proportionally so a demo runs in
+seconds without changing the *shape* of the distribution. It is recorded in the
+manifest, because a run at 0.4 scale is not comparable with a run at 1.0.
+
+### 3.1 External pressure must be external
+
+Profiles B and C exist to make the host's **real** state diverge from Nimbus's
+declared/reserved model. That only works if the interference is genuinely
+outside Nimbus: if Nimbus generated the load as a job, it would appear as a
+reservation, the static scheduler would already know about it, and the
+experiment would measure nothing.
+
+So pressure is applied by plain OS subprocesses (`benchmark/pressure.py`) that
+never import Nimbus, hold no lease, and consume no slot. From Nimbus's point of
+view the worker still has its full declared capacity free — verified in
+`test_external_cpu_pressure_is_observed_but_not_acted_on`, which asserts
+`available_cpu_units == declared.cpu_units` while telemetry reads >70%.
+
+**Pinning matters.** Stressors are pinned with `sched_setaffinity` to the
+*target worker's core set*. On a 20-core machine an unpinned stressor would land
+anywhere and perturb all three workers roughly equally, producing a uniform
+shift instead of the asymmetry the experiment needs.
+
+Two backends: `builtin` (default — `sys.executable -c '<busy loop>'`, no
+external dependency, so an experiment reproduces on any machine with Python) and
+`stress-ng` (via `NIMBUS_PRESSURE_BACKEND=stress-ng`, more precise load shaping
+but version-dependent). The backend used is recorded in the manifest.
+
+### 3.2 Workload parameters
+
+| Job type | Class | Parameter | Range |
+|---|---|---|---|
+| `matrix_multiply` | CPU_BOUND | `size` (n×n) | 300–1800 |
+| `prime_count` | CPU_BOUND | `limit` | 1e5–5e6 |
+| `hash_chain` | CPU_BOUND | `rounds` | 1e5–2e6 |
+| `sort_large` | MEMORY_BOUND | `elements` | 1e6–2e7 |
+| `array_transform` | MEMORY_BOUND | `mb` | 64–512 |
+| `compress_file` | IO_BOUND | `mb`, `level` | 8–256, 1–9 |
+| `file_scan` | IO_BOUND | `mb`, `chunk_kb` | 16–512 |
+| `json_transform` | LIGHTWEIGHT | `records` | 100–5000 |
+| `metadata_extract` | LIGHTWEIGHT | `count` | 10–200 |
+
+All parameters drawn from a seeded RNG. `benchmark/generator.py` is a pure
+function of `(profile, job_count, seed)` — the same triple always produces a
+byte-identical job list, asserted by a test.
+
+---
+
+## 4. Experiment sizes
+
+50 → 100 → 500 jobs locally. Scale only when a result demands it (brief §20).
+500 jobs at ~2 s mean runtime and 3 workers × 2 slots ≈ 3 minutes per trial;
+7 profiles × 5 strategies × 5 trials ≈ 9 hours of wall clock at 500 jobs, so
+**500-job runs are reserved for the headline profiles only** (`balanced`,
+`cpu_heavy`, `mixed_burst`). Everything else runs at 100.
+
+---
+
+## 5. Metrics
+
+Collected per run by `benchmark/metrics.py`. Definitions are stated because
+"average job completion time" is ambiguous otherwise.
+
+### 5.1 Latency
+
+For each job, with `t_created`, `t_scheduled`, `t_started`, `t_completed`:
+
+| Metric | Definition |
+|---|---|
+| **Completion time** | `t_completed - t_created` — end to end, the user-visible number |
+| **Queue wait** | `t_started - t_created` |
+| **Scheduling latency** | wall time inside `place()`, measured with `perf_counter_ns` |
+| **Dispatch latency** | `t_started - t_scheduled` |
+| **Execution time** | `t_completed - t_started` |
+
+Reported as mean, p50, p95, p99, min, max. p95/p99 on a 100-job run are computed
+over the pooled jobs of all trials (500 samples), with the per-trial values also
+shown, because a p99 from 100 samples is one data point and must not be
+presented as if it were stable.
+
+### 5.2 Throughput and makespan
+
+- **Throughput** = completed jobs / (last completion − first submission), jobs/s.
+- **Makespan** = last completion − first submission, for the whole workload.
+
+### 5.3 Utilisation and load balance
+
+**Load balance is measured on time, never on job counts.** Phase 1 produced a
+run distributed 16/7/4 jobs across three workers whose busy times were
+2.10 / 2.24 / 2.22 s: by job count that fleet looks badly imbalanced, by
+utilisation it is nearly perfectly balanced, and utilisation is what determines
+makespan. Encoded in `tests/unit/test_metrics.py`.
+
+Per worker `w`, over the makespan window:
+
+```
+busy_time(w) = sum of execution_time of jobs that ran on w
+util(w)      = busy_time(w) / (makespan * slots(w))
+```
+
+Primary metric — **coefficient of variation** across workers; scale-free, so
+comparable across profiles:
+
+```
+utilisation_cv = stdev([util(w)]) / mean([util(w)])       lower is better, 0 = perfect
+```
+
+Cross-check with different outlier sensitivity — **Jain's fairness index**:
+
+```
+jain = (sum x)^2 / (n * sum x^2)                          in (0, 1], higher is better
+```
+
+Also recorded, **descriptively only**: `job_count_by_worker` and
+`job_count_cv`. These are reported because the contrast with `utilisation_cv` is
+itself informative, never as the balance metric.
+
+### 5.4 Reliability
+
+- **Retry rate** = retried attempts / jobs submitted
+- **Failure rate** = jobs terminal-`FAILED` / jobs submitted
+- **DLQ count**
+- **Duplicate-execution rate** (`architecture.md` §8) — reported, never hidden
+- **Time-to-detect** worker failure (kill → status `UNHEALTHY`)
+- **Time-to-recover** (kill → the affected job reaches `COMPLETED` elsewhere)
+
+### 5.5 Scheduler diagnostics
+
+Not performance metrics — instrumentation that explains *why* a result happened.
+These are what turn "Adaptive was 6% faster" into an explanation.
+
+- **Decision margin** distribution (`scheduling.md` §6)
+- **Placement concentration**: max fraction of jobs sent to any single worker
+  within one telemetry interval — the direct measurement of herding (risk R1)
+- **Term contribution breakdown**: mean contribution of each scoring term to the
+  winning score, by class — shows whether the weights are doing anything
+- **Stale-decision rate**: fraction of decisions made on telemetry older than
+  `telemetry_interval_s`
+- **Runtime-estimate error**: `|est − actual| / actual`, which says whether the
+  δ term carries real information
+
+---
+
+### 5.6 Phase 2 baseline results
+
+Single-trial, descriptive, not inferential. Every run is archived under
+`.nimbus/artifacts/benchmarks/<experiment_id>/` and every figure below is
+regenerable from `scripts/run_phase2_baselines.py`.
+
+Fleet: 3 workers x 2 slots, 2048 declared CPU units, 4096 MB, disjoint 6-core
+affinity sets. Telemetry on at 1 s. Seed 1337.
+
+#### Profile A — homogeneous_saturated, loaded (60 jobs, util 0.71–0.82)
+
+| Strategy | makespan | thr/s | completion p50 | p95 | **util CV** | job CV |
+|---|---|---|---|---|---|---|
+| `fifo` | 8.71 s | 6.89 | 968 ms | 4098 ms | 0.0697 | 0.4924 |
+| `static_resource_aware` | 9.30 s | 6.45 | 1432 ms | 4552 ms | **0.0308** | 0.2179 |
+| `static_resource_aware_binpack` | 12.11 s | 4.96 | 3659 ms | 7328 ms | 0.0589 | 0.2784 |
+
+Static balances better than round-robin (util CV 0.031 vs 0.070) at a small
+throughput cost. Binpack is 39% worse on makespan: packing onto fewer workers
+costs throughput when there is enough work to fill the fleet.
+
+#### Profile B — cpu_pressure, loaded (60 jobs, `worker-1` externally saturated)
+
+> **⚠ CORRECTED IN PHASE 3 — DO NOT CITE THE NUMBERS BELOW.**
+> These are **single runs per cell**. Phase 3 repeated this profile 20+ times
+> and found makespan is **bimodal, ranging 11–46 s for every strategy**,
+> because it is set almost entirely by one straggler (see §5.7). Three
+> single-run draws cannot distinguish schedulers in that distribution. The
+> Phase 2 headline — "Static Resource-Aware is 73% slower than round-robin" —
+> **was not supported by adequate repetitions and is withdrawn.** The table is
+> kept, struck through in intent, so the record shows what was claimed and what
+> corrected it.
+
+| Strategy | makespan | thr/s | util CV | observed CPU w1/w2/w3 |
+|---|---|---|---|---|
+| `fifo` | 30.57 s | 1.96 | 0.7918 | 97% / 7% / 7% |
+| `static_resource_aware` | 52.82 s | 1.14 | 1.2308 | 100% / 6% / 4% |
+| `static_resource_aware_binpack` | 45.42 s | 1.32 | 1.2313 | 98% / 6% / 3% |
+
+What survives the correction is the **qualitative** observation, which Phase 3
+re-confirmed with repetitions: telemetry records `worker-1` at ~100% CPU
+throughout while Nimbus's declared/reserved model reports its full capacity
+free. The divergence between model and reality is real. The claim that it cost
+Static 73% of its makespan was an artifact of N=1.
+
+The mechanism sketched in Phase 2 — "the pressured worker completes fewer jobs,
+so it holds the fewest reservations, so a least-loaded policy sends it more" —
+also needs qualifying. Phase 3 measurement shows the opposite is at least as
+important: slow jobs *hold their slots longer*, so the pressured worker is
+frequently at capacity and gets filtered out on feasibility. Both effects are
+present; which dominates was never measured, and the Phase 2 text asserted one
+of them with more confidence than the evidence supported.
+
+#### Light-load sweep (40 jobs at 0.4 size scale, fleet util ≈0.2)
+
+At low load `static_resource_aware` had *worse* util CV than `fifo` across every
+profile, because an idle fleet produces score ties and the `worker_id` tie-break
+sends everything to `worker-1`. See `scheduling.md` §5.4 — this is a threat to
+Phase 3 validity, not a curiosity.
+
+#### Telemetry ON/OFF control (3 trials per arm, arms alternated)
+
+| Measure | Result |
+|---|---|
+| Decisions replayed from DECLARED + RESERVED alone | **240 / 240 exact** |
+| Telemetry duty cycle | 0.134% of wall time |
+| Mean sample cost | 0.145 ms per worker |
+| Median throughput OFF | 8.49 jobs/s (8.35–8.57) |
+| Median throughput ON | 8.35 jobs/s (8.18–8.59) |
+| Median delta | −1.7%, **inside within-arm spread** |
+
+The delta is smaller than the within-arm range, so these runs neither
+demonstrate a throughput cost nor prove there is none. The defensible figure is
+the duty cycle.
+
+**What is deliberately not asserted:** that telemetry ON and OFF produce the
+same placement *sequence*. They do not — and neither do two consecutive OFF
+runs (measured: 13 of 24 placements differed). Reservation state at decision
+time depends on real completion timing, so a live sequence is not reproducible.
+The property that *does* hold, and is tested, is that each decision is a
+deterministic function of its recorded inputs. See §8.
+
+---
+
+### 5.7 Phase 3 results — adaptive-v1
+
+Protocol per [`adaptive-v1-preregistration.md`](./adaptive-v1-preregistration.md)
+§6: same seed, same job plan, same arrival schedule, same pressure spec, same
+fleet, same FIFO ordering. **The only variable is the information available to
+placement.** Arms interleaved within each repetition.
+
+All figures below come from runs archived under
+`.nimbus/artifacts/benchmarks/<experiment_id>/` and are regenerable with
+`scripts/run_phase3_experiments.py` and `scripts/analyse_phase3.py`.
+
+#### Profile B — external CPU pressure (the primary experiment)
+
+34 runs, N=8–9 per strategy, 60 jobs each, all 60/60 completed.
+`worker-1` observed at 92–100% CPU in every run; workers 2–3 at 4–16%. Nimbus's
+declared/reserved model reported `worker-1`'s full capacity free throughout.
+
+**Mechanism — share of jobs sent to the pressured worker** (fair share 33.3%):
+
+| Strategy | mean ± sd | range |
+|---|---|---|
+| `static_resource_aware_binpack` | 32.7% ± 5.6% | 25–43% |
+| `fifo` | 26.1% ± 3.3% | 23–30% |
+| `static_resource_aware` | 18.9% ± 8.9% | 12–33% |
+| **`adaptive`** | **13.1% ± 1.7%** | 12–17% |
+
+adaptive-v1 sends the least work to the saturated worker *and* is by far the
+most consistent about it. That consistency is the point: observed CPU is a
+stable signal, so the bias is steady. Reservations churn as jobs start and
+finish, so the reservation-only policy swings between 12% and 33%.
+
+**Outcome — makespan.** The distribution is bimodal and set almost entirely by
+one straggler: whichever large I/O job lands on the saturated worker runs
+10–40× slower there and dominates the run.
+
+| Strategy | median | per-run makespans (s) | straggler runs |
+|---|---|---|---|
+| **`adaptive`** | **11.6 s** | 11.3 11.4 11.5 11.6 11.7 11.7 12.2 **31.9** | **1 / 8** |
+| `static_resource_aware` | 31.0 s | 11.9 12.7 13.3 15.9 31.0 40.4 53.5 53.8 54.4 | 5 / 9 |
+| `fifo` | 38.2 s | 11.4 12.4 32.2 36.4 38.2 44.9 45.9 46.1 46.2 | 7 / 9 |
+| `static_resource_aware_binpack` | 46.0 s | 11.9 12.4 45.5 45.9 46.0 46.4 46.4 46.7 | 6 / 8 |
+
+("Straggler" = a single job exceeding 15 s. The split is unambiguous:
+non-straggler runs top out at 6 s, straggler runs start at 25 s. This threshold
+was chosen after seeing the data and is disclosed as post-hoc; it is a
+descriptive cut, not a test.)
+
+**Statistics.** Mann-Whitney U, two-sided, Bonferroni-corrected across the three
+comparisons (α = 0.05/3 = 0.0167). This follows the project's standing protocol
+in §2.3 — non-parametric test plus Cliff's delta — which pre-dates Phase 3.
+
+| Comparison | median delta | U | p | Cliff's δ |
+|---|---|---|---|---|
+| adaptive vs `static_resource_aware` | −62.5% | 6.0 | **0.0039** | −0.83 (large) |
+| adaptive vs `fifo` | −69.5% | 7.0 | **0.0053** | −0.81 (large) |
+| adaptive vs `binpack` | −74.7% | 3.0 | **0.0023** | −0.91 (large) |
+
+Fisher exact on straggler incidence: adaptive vs `fifo` p = 0.0152, vs `binpack`
+p = 0.0406, vs `static_resource_aware` p = 0.1312 (not significant).
+
+#### Profile A — homogeneous loaded fleet (the control)
+
+No external pressure, identical workers, mean fleet utilisation 0.81–0.83 (above
+the pre-registered 0.50 gate). N=5 per strategy, 60 jobs each, all 60/60
+completed.
+
+| Strategy | makespan median | per-run makespans (s) | util CV | tie rate |
+|---|---|---|---|---|
+| `fifo` | 8.89 s | 8.33 8.58 8.89 9.34 11.42 | 0.049 | 0.00 |
+| `adaptive` | 9.57 s | 8.84 9.24 9.57 10.17 10.83 | 0.050 | 0.29 |
+| `static_resource_aware_binpack` | 10.08 s | 8.05 8.49 10.08 10.72 10.95 | 0.080 | 0.46 |
+| `static_resource_aware` | 10.19 s | 9.14 9.38 10.19 10.35 10.77 | 0.027 | 0.50 |
+
+adaptive vs `fifo`: **+7.6%**, ranges overlap heavily → **no meaningful observed
+difference** by the pre-registered test.
+
+**This is the result Profile A was designed to produce, and it is a good one.**
+When the fleet is homogeneous and unpressured, telemetry carries almost no
+information the reservation model lacks, so a telemetry-aware scheduler should
+be indistinguishable from a static one — and it is. Equally important: adaptive
+does not *hurt* here. Had it materially beaten the baselines on this profile,
+that would have warranted investigation before any claim, because there is no
+mechanism by which it should.
+
+#### Oscillation and tie-breaking
+
+adaptive-v1 ships without hysteresis or damping, so oscillation had to be
+measured rather than assumed away. Across the same 34 runs:
+
+| Strategy | switch rate | concentration max | **tie rate** |
+|---|---|---|---|
+| `adaptive` | 0.56 [0.53–0.61] | 0.86 [0.80–1.00] | **0.01** |
+| `static_resource_aware` | 0.52 [0.47–0.58] | 0.89 [0.83–1.00] | **0.35** |
+| `fifo` | 0.78 [0.69–0.90] | 0.72 [0.56–0.89] | 0.00 |
+| `static_resource_aware_binpack` | 0.44 [0.32–0.53] | 1.00 | **0.36** |
+
+**No oscillation.** adaptive-v1 sits between the static policies and round-robin
+on switching, its concentration matches the static baselines, and its placement
+share was the least variable of the four. The pre-registered 3-sample smoothing
+window was sufficient at a 1 s telemetry interval. No damping was added.
+
+**A confound this exposed.** The static policies decided **35–36% of placements
+by the `worker_id` tie-break**, not by their own scoring. R9 — the tie-break
+degeneracy Phase 2 identified at *low* load — is active in the loaded regime
+too, which the pre-registered load-regime gate (§6.3 of the pre-registration)
+implicitly assumed it would not be. adaptive-v1 ties on 1% of decisions, because
+a continuous observed signal rarely produces exact equality.
+
+Therefore part of adaptive's advantage over `static_resource_aware` is
+*eliminating arbitrary tie-breaks* rather than *using telemetry content*. Those
+are hard to separate — a continuous signal is what removes the ties — but it is
+not the thing H3 set out to test.
+
+`fifo` never ties (rotation offsets are distinct integers), so **adaptive vs
+`fifo` is the clean comparison**: −69.5%, p = 0.0053, Cliff's δ = −0.81.
+
+#### Profiles C, D, E — secondary, all null
+
+N=5 per strategy, 60 jobs each, all 60/60 completed, all decisions replayed
+exactly.
+
+| Profile | fleet util | adaptive vs best baseline | verdict | passes load gate? |
+|---|---|---|---|---|
+| C `memory_pressure` | 0.24–0.29 | −0.6% | no meaningful difference | **no** |
+| D `heavy_tail` | 0.14–0.17 | +0.9% | no meaningful difference | **no** |
+| E `burst` | 0.49–0.52 | +0.0% | no meaningful difference | borderline |
+
+**None of these three is usable as primary evidence**, because all fall at or
+below the pre-registered 0.50 fleet-utilisation gate (§6.3 of the
+pre-registration). They are reported as boundary-condition results.
+
+**Profile C** behaved exactly as the pre-registration predicted it would, for
+the reason it predicted (§2.2): three local workers share one machine's RAM, so
+an external memory stressor raises `memory_percent` identically for all of them
+and the memory signal cannot discriminate. A null result here is a *measurement*
+limitation, not evidence about the algorithm, and it stays null until Phase 5
+gives each worker its own host. Listing C as a primary profile was a
+pre-registration mistake; §2.2 already knew better.
+
+**Profile D** never loaded the fleet — makespan is ~10.0 s for every strategy,
+which is simply the arrival span. With no queueing there is nothing to schedule
+and every policy converges. Worth noting anyway: adaptive's utilisation CV was
+0.189 against 0.721 (`static_resource_aware`) and 1.468 (`binpack`), so it
+distributed work far more evenly even where that did not change makespan.
+
+**Profile E** put every strategy within 0.35 s of every other (12.97–13.32 s).
+A burst of 30 simultaneous arrivals is absorbed by queueing, not by placement.
+
+**The pattern across all five profiles is the substantive finding.** adaptive-v1
+differs from the baselines in exactly one place — Profile B, where observed host
+state carries information the reservation model does not have — and is
+indistinguishable everywhere else. That is what H3 predicted, and it is a more
+credible outcome than universal superiority would have been.
+
+
+#### The pre-registered materiality test fails, and that is reported
+
+The pre-registration (§1) required **≥10% median difference AND non-overlapping
+per-run ranges**. Median difference is −62.5% ✓; ranges overlap ✗, because one
+adaptive run hit a straggler (31.9 s) while some baseline runs got lucky
+(11.4 s). By the letter of that criterion: **"no meaningful observed
+difference."**
+
+That criterion was a poor choice, and the flaw is in the pre-registration, not
+in the result. Requiring disjoint ranges on a bimodal distribution is close to
+unsatisfiable at N≈9 no matter how large the effect — a single unlucky run in
+either arm destroys it. It was written before the bimodality was known.
+
+Both verdicts stand in the record. The pre-registered shortcut says no
+difference; the project's standing statistical protocol says a large,
+significant one. Neither is dropped, and the criterion is **not** retroactively
+edited — `adaptive-v2`'s pre-registration should use a rank-based test with a
+stated effect-size floor instead.
+
+#### Why adaptive-v1 works here despite a low CPU weight for I/O jobs
+
+The stragglers are `file_scan` and `compress_file` — `IO_BOUND`, whose weight
+vector gives observed CPU only 0.15. The steering nonetheless works, through
+three terms at once: `queue` (0.40) rises because slow jobs hold slots longer,
+`reservation` (0.25) rises for the same reason, and `cpu` (0.15) adds a small
+but *persistent* penalty the static policy does not have. The static policy sees
+only the first two, and those fluctuate.
+
+This was not predicted. The pre-registration reasoned that I/O-bound jobs "spend
+most of their life blocked, so concurrency matters more than host CPU", which is
+true — but on a CPU-saturated host they suffer badly anyway, and the small
+constant CPU penalty is what makes the avoidance *stable*. Whether raising the
+`IO_BOUND` CPU weight would help further is an `adaptive-v2` question and was
+deliberately not tried.
+
+#### Hypothesis status
+
+**H3: SUPPORTED IN TESTED REGIMES.**
+
+Supported:
+
+* Under Profile B — externally induced worker pressure, loaded fleet —
+  adaptive-v1 reduced makespan against all three baselines with large effect
+  sizes (Mann-Whitney, Bonferroni-corrected: p = 0.0039 / 0.0053 / 0.0023;
+  Cliff's δ = −0.83 / −0.81 / −0.91).
+* The pre-registered *mechanism* is confirmed directly and with low variance:
+  adaptive sent 13.1% ± 1.7% of jobs to the saturated worker against
+  18.9% ± 8.9%, 26.1% ± 3.3% and 32.7% ± 5.6%.
+* Profile A, the control, is a clean null (+7.6%, ranges overlap). Telemetry
+  neither helps nor materially hurts when it carries no extra information.
+
+Not supported, or not tested:
+
+* The **pre-registered materiality criterion fails** on Profile B (ranges
+  overlap). By the letter of §1, "no meaningful observed difference".
+* Adaptive is **not** distinguishable from `static_resource_aware` on straggler
+  incidence (Fisher p = 0.1312).
+* The adaptive-vs-`static_resource_aware` comparison is **confounded**: the
+  static policy decided 35% of placements by tie-break. Only
+  adaptive-vs-`fifo` (which never ties) is clean.
+* Profiles C, D and E produced no difference, and none of them passes the load
+  gate, so they are evidence of nothing either way.
+* Everything here is one machine, three co-located workers, 60-job runs, a
+  single workload registry, and one algorithm version. Nothing generalises to
+  heterogeneous fleets, real instances, or other workloads.
+
+The honest one-line summary: **telemetry-aware placement measurably helped in
+the one regime it was designed for, on this fleet, at this scale — and nowhere
+else that was tested.**
+
+## 6. AWS-native baseline (Phase 8) — **resolved as a refusal**
+
+### 6.1 The fairness problem
+
+A naive Nimbus-vs-Batch wall-clock comparison measures container cold start and
+capacity provisioning, not placement quality
+(`aws-native-scheduling.md` §1.4: jobs "can remain in `RUNNABLE` indefinitely";
+`STARTING` absorbs the full image-pull duration).
+
+### 6.2 Conditions required for a number to be published
+
+All of these, or no number:
+
+1. Batch compute environment pre-scaled to `minvCpus` matching the Nimbus fleet
+   (3 × 2 vCPU = 6 vCPUs), warm before the run.
+2. The job container image pre-pulled onto the instances.
+3. Identical workload code — the same `worker/workloads/*` module, invoked by the
+   same entry point, so the compute performed is literally identical.
+4. Identical instance types and count.
+5. The same seeded job sequence and the same arrival process.
+6. Measurement taken from the Batch API timestamps
+   (`startedAt`/`stoppedAt`) for the execution comparison, **and separately**
+   end-to-end from `createdAt`, with both reported and the difference explained.
+7. ≥5 trials.
+
+### 6.3 If those conditions cannot be met
+
+> **Resolved: they were not met, and no Batch number is published.**
+> Four of the seven conditions are unmet and two are designed but unexercised,
+> because no AWS resources were ever provisioned. The full disclosure is
+> [`aws-batch-baseline.md`](./aws-batch-baseline.md), written in the form
+> specified below.
+
+Then `docs/experiments.md` and the final report state, explicitly:
+
+> "A fair quantitative comparison with AWS Batch was not achievable within the
+> project's budget and time constraints because *X*. What follows is an
+> architectural comparison only. No Batch performance numbers are reported."
+
+**No estimated, extrapolated, or illustrative Batch numbers are permitted**
+(brief §33, `aws-native-scheduling.md` §9).
+
+### 6.4 What is compared regardless
+
+The architectural comparison in `aws-native-scheduling.md` §6–§7 stands on its
+own: signal sources, decision granularity, explainability, and the capability
+matrix showing the many rows where AWS is strictly more capable.
+
+---
+
+## 7. Cost-normalised comparison
+
+Performance per dollar, not performance alone (brief §24). See
+[`cost-model.md`](./cost-model.md) for unit prices and the derivation. Reported as
+**cost per 1000 jobs** and **jobs per dollar**, with the compute / storage /
+queue / API split, for each strategy and for the AWS-native baseline if run.
+
+Since all Nimbus strategies share an identical fleet, their infrastructure cost
+per hour is identical and the cost difference reduces to *makespan* — a strategy
+that finishes sooner rents the fleet for less time. This is stated in the report
+so nobody mistakes it for an independent result.
+
+---
+
+## 8. Threats to validity
+
+Carried into `docs/limitations.md` and into the final report.
+
+| Threat | Type | Handling |
+|---|---|---|
+| Local workers share one host and one memory bus | Internal | CPU affinity pinning; re-run headline on EC2; report both |
+| Weights chosen by the same person who evaluates them | Internal | Weights fixed and committed before any run; changes are new labelled configs |
+| Profiles chosen to favour telemetry | External | Suite deliberately includes profiles predicted to reject H1 (`long_tail`, saturated `balanced`) |
+| p99 from small N | Statistical | Pool across trials; publish N; show per-trial spread |
+| Multiple comparisons | Statistical | Bonferroni correction; pre-registered primary metric per sub-hypothesis |
+| `t3` burstable credits distort long runs | Internal | Monitor `CPUCreditBalance`; use `t3.small` unlimited-off and discard credit-exhausted trials, or move to `c6i.large` |
+| Researcher degrees of freedom in reporting | Internal | Analysis script is fixed and run over all archived raws; every table regenerable by one command |
+| **Static baseline degenerates at low load** (tie-break sends all jobs to `worker-1` when the fleet is idle) | Internal | Report offered load with every result; run Phase 3 comparisons only in a loaded regime. Otherwise Adaptive beats Static for the wrong reason. |
+| **Single-trial baselines** | Statistical | Phase 2 figures are labelled descriptive; any Phase 3 claim requires the N=5 protocol in §2.2 |
+| **Shared development machine** | Internal | Non-Nimbus processes contribute background CPU (unpressured workers read 6–30% at idle). Affects absolute numbers, not the within-run comparison, since all arms share the condition. Re-run headline experiments on dedicated EC2 in Phase 5. |
+| **Host-scoped memory telemetry cannot discriminate between local workers** | Internal | `memory_percent` is identical for all three local workers; `process_memory_mb` is the worker-scoped figure. Both recorded and labelled. Resolved on EC2, where each worker owns its host. |
+
+---
+
+## 9. What Phase 2 deliberately did not test
+
+*Recorded as written at the close of Phase 2, before adaptive-v1 existed.*
+
+Phase 2 established baselines and instrumentation. It made **no claim** about
+adaptive scheduling, which was absent from the codebase by design. The
+hypothesis in §1 was untested: telemetry had been shown to be *collectable*,
+*recordable* and *cheap*, and to *observe* conditions the static model misses —
+none of which was evidence that consuming it would improve placement. That was
+Phase 3's job, and it was left open that it might return a null result.
+
+Phase 3 has since run. It returned a **partial** answer, not a clean one: see
+§5.7 for what held (a consistent, low-variance bias away from an externally
+pressured worker) and what did not (the pre-registered materiality test fails,
+and the adaptive-vs-static comparison is confounded by tie-breaking).

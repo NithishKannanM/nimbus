@@ -69,11 +69,33 @@ reservation. `abandoned_executions` reports the rate, and the abandoned result
 is discarded by the execution-id guard rather than credited to the attempt that
 replaced it.
 
-On EC2 the HTTP worker agent runs each job as its own process and can signal it,
-so this is a limitation of the *local* data plane rather than of the design. It
-is recorded rather than fixed because fixing it locally would mean replacing the
+The HTTP worker (`worker/api.py`) wraps the same `LocalWorkerAgent` and its
+process pool, so `POST /abandon` on an EC2 worker has the same effect: the
+execution is marked abandoned and its result discarded, and the process runs on.
+A process-per-job worker could signal it, but that is not what is built. It is
+recorded rather than fixed because fixing it locally would mean replacing the
 pool with a process-per-job model, which would change execution timing and make
 every archived benchmark run incomparable to future ones.
+
+**Remote workers cannot be hard-failed from the control plane** *(HTTP data
+plane)*. With `NIMBUS_WORKER_TRANSPORT=http`, `fail_worker(hard=True)` raises
+`NotImplementedError`: crashing a pool on another host is that host's business.
+`hard=False` (a partition) works. The failure-injection tests exercise real
+process kills only against the local transport, so the reaper's behaviour on a
+genuinely dead remote host rests on the `/health` probe path, which has been
+tested against mocks and never against a failing EC2 instance.
+
+**Abandon over HTTP is fire-and-forget, and a read timeout is ambiguous.**
+`abandon` is queued, not confirmed, and a timed-out `POST /execute` may have
+been accepted. Both are absorbed by execution-id dedupe rather than prevented,
+so a dispatch timeout can cost a duplicate execution, which is counted.
+
+**The control plane needs a fixed private IP, and workers are baked into its
+configuration.** To avoid a Terraform cycle, `infra/ec2.tf` pins the control
+plane to `cidrhost(<public subnet>, 10)`, and its `user_data` embeds every
+worker's address in `NIMBUS_WORKER_ENDPOINTS`. Replacing a worker changes that
+`user_data`, which may force the control plane to be recreated. There is no
+service discovery and no elastic fleet.
 
 **An orphaned job waits out the visibility timeout.** A job in a live state whose
 lease the control plane has lost cannot be made visible again: SQS offers no way
@@ -281,6 +303,14 @@ must not imply otherwise.
   a closed enum resolved through a registry; there is no `eval`, no dynamic
   import from payload, and payload fields are validated by pydantic models with
   explicit bounds.
+- The worker API (`worker/api.py`: `/execute`, `/abandon`, `/health`, ...) and the
+  control plane's `/internal/results` have **no authentication** beyond the
+  security group in front of them. Anything that can reach `:8080` can run a
+  (validated, closed-enum) workload on a worker or abandon an execution; anything
+  that can reach `:8000` can post a result.
+- The HTTP data plane, the Batch entry point and the CloudWatch metrics path are
+  written and tested locally only. None has run on real AWS, so their behaviour
+  on a real network, under real IAM and against real CloudWatch is unverified.
 - No encryption in transit between scheduler and worker in Phase 5 (plain HTTP
   inside a private security group). Adding TLS is straightforward and untaken.
 - IAM least privilege *is* enforced: the worker role has no SQS and no DynamoDB

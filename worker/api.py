@@ -48,6 +48,21 @@ class AbandonRequest(BaseModel):
     execution_id: str = Field(..., description="the execution to disown")
 
 
+def result_payload(result: ExecutionResult) -> dict[str, Any]:
+    """The wire form of a completion: ``ExecutionResultRequest`` on the other end."""
+    return {
+        "job_id": result.job_id,
+        "execution_id": result.execution_id,
+        "worker_id": result.worker_id,
+        "ok": result.ok,
+        "result": result.result,
+        "error": result.error,
+        "execution_time_ms": result.execution_time_ms,
+        "cpu_units": result.cpu_units,
+        "memory_mb": result.memory_mb,
+    }
+
+
 class ResultReporter:
     """Ships completions to the control plane, off the execution path.
 
@@ -64,8 +79,18 @@ class ResultReporter:
     worker that dies mid-job.
     """
 
-    def __init__(self, control_plane_url: str, *, worker_id: str, retries: int = 3) -> None:
+    def __init__(
+        self,
+        control_plane_url: str,
+        *,
+        worker_id: str,
+        retries: int = 3,
+        transport: httpx.BaseTransport | None = None,
+    ) -> None:
         self._url = control_plane_url.rstrip("/")
+        # Test seam: lets a suite route deliveries to an in-process app or a
+        # MockTransport instead of the network.
+        self._transport = transport
         self._worker_id = worker_id
         self._retries = retries
         self._queue: queue.Queue[ExecutionResult | None] = queue.Queue()
@@ -87,7 +112,7 @@ class ResultReporter:
         self._queue.put(result)
 
     def _run(self) -> None:
-        with httpx.Client(timeout=10.0) as client:
+        with httpx.Client(timeout=10.0, transport=self._transport) as client:
             while True:
                 result = self._queue.get()
                 if result is None:
@@ -95,17 +120,7 @@ class ResultReporter:
                 self._deliver(client, result)
 
     def _deliver(self, client: httpx.Client, result: ExecutionResult) -> None:
-        payload = {
-            "job_id": result.job_id,
-            "execution_id": result.execution_id,
-            "worker_id": result.worker_id,
-            "ok": result.ok,
-            "result": result.result,
-            "error": result.error,
-            "execution_time_ms": result.execution_time_ms,
-            "cpu_units": result.cpu_units,
-            "memory_mb": result.memory_mb,
-        }
+        payload = result_payload(result)
         for attempt in range(1, self._retries + 1):
             try:
                 response = client.post(f"{self._url}/internal/results", json=payload)
@@ -130,6 +145,8 @@ def create_app(
     slots: int | None = None,
     control_plane_url: str | None = None,
     scratch_dir: str | None = None,
+    agent: LocalWorkerAgent | None = None,
+    reporter: ResultReporter | None = None,
 ) -> FastAPI:
     worker_id = worker_id or os.environ.get("NIMBUS_WORKER_ID", "worker-1")
     slots = slots or int(os.environ.get("NIMBUS_WORKER_SLOTS", "2"))
@@ -138,10 +155,16 @@ def create_app(
     )
     scratch_dir = scratch_dir or os.environ.get("NIMBUS_SCRATCH_DIR")
 
-    reporter = ResultReporter(control_plane_url, worker_id=worker_id)
-    agent = LocalWorkerAgent(
-        worker_id, slots=slots, scratch_dir=scratch_dir, sink=reporter.submit
-    )
+    # ``agent`` and ``reporter`` are test seams. An injected agent is expected
+    # to have been built with the injected reporter's ``submit`` as its sink.
+    if reporter is None:
+        reporter = ResultReporter(control_plane_url, worker_id=worker_id)
+    if agent is None:
+        agent = LocalWorkerAgent(
+            worker_id, slots=slots, scratch_dir=scratch_dir, sink=reporter.submit
+        )
+    else:
+        slots = getattr(agent, "slots", slots)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):

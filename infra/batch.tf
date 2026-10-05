@@ -69,13 +69,13 @@ resource "aws_iam_instance_profile" "batch_instance" {
 resource "aws_batch_compute_environment" "nimbus" {
   count = var.enable_batch_baseline ? 1 : 0
 
-  name         = "nimbus-${var.environment}-ce-${random_id.suffix.hex}"
-  type         = "MANAGED"
-  service_role = aws_iam_role.batch_service[0].arn
+  compute_environment_name = "nimbus-${var.environment}-ce-${random_id.suffix.hex}"
+  type                     = "MANAGED"
+  service_role             = aws_iam_role.batch_service[0].arn
 
   compute_resources {
-    type      = "EC2"
-    subnets   = [aws_subnet.public.id]
+    type               = "EC2"
+    subnets            = [aws_subnet.public.id]
     security_group_ids = [aws_security_group.worker.id]
     instance_role      = aws_iam_instance_profile.batch_instance[0].arn
     instance_type      = [var.instance_type]
@@ -136,6 +136,23 @@ resource "aws_batch_job_definition" "workload" {
 
   retry_strategy {
     attempts = var.max_attempts
+
+    # Exit 2 is worker.batch_entrypoint's usage error (bad payload / unknown
+    # job type): deterministic, so retrying only burns attempts. Everything
+    # else retries as before. First matching entry wins.
+    evaluate_on_exit {
+      action       = "EXIT"
+      on_exit_code = "2"
+    }
+    evaluate_on_exit {
+      action       = "RETRY"
+      on_exit_code = "*"
+    }
+    # Infrastructure failures (e.g. host terminated) carry a reason, no exit code.
+    evaluate_on_exit {
+      action    = "RETRY"
+      on_reason = "*"
+    }
   }
 }
 

@@ -23,38 +23,61 @@ locals {
   # Pinned so the two roles read the same values and a change cannot drift
   # between them.
   common_env = {
-    NIMBUS_BACKEND         = "aws"
-    AWS_REGION             = var.region
-    NIMBUS_DYNAMODB_TABLE  = aws_dynamodb_table.state.name
-    NIMBUS_S3_BUCKET       = aws_s3_bucket.artifacts.bucket
-    NIMBUS_SQS_QUEUE_URL   = aws_sqs_queue.jobs.url
-    NIMBUS_SQS_DLQ_URL     = aws_sqs_queue.jobs_dlq.url
-    NIMBUS_MAX_ATTEMPTS    = tostring(var.max_attempts)
-    NIMBUS_WORKER_COUNT    = tostring(var.worker_count)
+    NIMBUS_BACKEND              = "aws"
+    AWS_REGION                  = var.region
+    NIMBUS_DYNAMODB_TABLE       = aws_dynamodb_table.state.name
+    NIMBUS_S3_BUCKET            = aws_s3_bucket.artifacts.bucket
+    NIMBUS_SQS_QUEUE_URL        = aws_sqs_queue.jobs.url
+    NIMBUS_SQS_DLQ_URL          = aws_sqs_queue.jobs_dlq.url
+    NIMBUS_MAX_ATTEMPTS         = tostring(var.max_attempts)
+    NIMBUS_WORKER_COUNT         = tostring(var.worker_count)
     NIMBUS_VISIBILITY_TIMEOUT_S = tostring(var.visibility_timeout_s)
   }
 
+  # The control plane gets a fixed private address so workers can be told where
+  # to POST results without referencing the control-plane instance (which
+  # references the workers for their endpoints -- that would be a cycle). .10
+  # skips the first addresses AWS reserves in every subnet.
+  control_plane_ip = cidrhost(aws_subnet.public.cidr_block, 10)
+
+  control_plane_env = merge(local.common_env, {
+    # HTTP bridge: the scheduler pushes to each worker's :8080 and the workers
+    # POST results back to /internal/results on :8000.
+    NIMBUS_WORKER_TRANSPORT = "http"
+    NIMBUS_WORKER_ENDPOINTS = join(",", [
+      for w in aws_instance.worker : "${w.tags["WorkerId"]}=http://${w.private_ip}:8080"
+    ])
+  })
+
   control_plane_user_data = templatefile("${path.module}/user_data/control_plane.sh.tftpl", {
-    env            = local.common_env
-    log_group      = aws_cloudwatch_log_group.control_plane.name
-    region         = var.region
+    env       = local.control_plane_env
+    log_group = aws_cloudwatch_log_group.control_plane.name
+    region    = var.region
     # Admin endpoints are destructive by design and the API is unauthenticated
     # before Phase 7. They stay off on a deployed host; the failure tests run
     # them locally.
-    enable_admin   = "0"
+    enable_admin = "0"
   })
 
-  worker_user_data = templatefile("${path.module}/user_data/worker.sh.tftpl", {
-    env       = local.common_env
-    log_group = aws_cloudwatch_log_group.worker.name
-    region    = var.region
-  })
+  # Per worker: identity and the control-plane URL. Depends only on the fixed
+  # local IP, never on aws_instance.control_plane.
+  worker_user_data = [
+    for i in range(var.worker_count) : templatefile("${path.module}/user_data/worker.sh.tftpl", {
+      env = merge(local.common_env, {
+        NIMBUS_WORKER_ID         = "worker-${i + 1}"
+        NIMBUS_CONTROL_PLANE_URL = "http://${local.control_plane_ip}:8000"
+      })
+      log_group = aws_cloudwatch_log_group.worker.name
+      region    = var.region
+    })
+  ]
 }
 
 resource "aws_instance" "control_plane" {
   ami                    = data.aws_ami.al2023.id
   instance_type          = var.control_plane_instance_type
   subnet_id              = aws_subnet.public.id
+  private_ip             = local.control_plane_ip
   vpc_security_group_ids = [aws_security_group.control_plane.id]
   iam_instance_profile   = aws_iam_instance_profile.control_plane.name
   key_name               = var.key_name == "" ? null : var.key_name
@@ -89,7 +112,7 @@ resource "aws_instance" "worker" {
   vpc_security_group_ids = [aws_security_group.worker.id]
   iam_instance_profile   = aws_iam_instance_profile.worker.name
   key_name               = var.key_name == "" ? null : var.key_name
-  user_data              = local.worker_user_data
+  user_data              = local.worker_user_data[count.index]
 
   root_block_device {
     volume_size = var.root_volume_gb

@@ -47,8 +47,12 @@ export function StrategySwitch({
   }
 
   return (
-    <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-ink/15 pt-3">
-      <span className="legend text-declared">strategy</span>
+    <div
+      role="group"
+      aria-labelledby="strategy-l"
+      className="mt-3 flex flex-wrap items-center gap-2 border-t border-ink/15 pt-3"
+    >
+      <span id="strategy-l" className="legend text-declared">strategy</span>
       {available.map((name) => {
         const isActive = name === active;
         const isPending = pending === name;
@@ -57,10 +61,11 @@ export function StrategySwitch({
             key={name}
             type="button"
             disabled={pending !== null}
+            aria-pressed={isActive}
             onClick={() => switchTo(name)}
             title={isActive ? "active" : `switch to ${name}`}
             className={[
-              "border px-2.5 py-1 font-log text-[11px] transition-colors disabled:cursor-wait",
+              "min-h-[32px] border px-3 py-1 font-log text-[11px] transition-colors active:translate-y-px disabled:cursor-wait motion-reduce:transition-none motion-reduce:active:translate-y-0",
               isActive
                 ? "border-ink bg-ink text-paper"
                 : "border-ink/30 text-ink hover:border-ink/60 hover:bg-ink/5",
@@ -71,7 +76,9 @@ export function StrategySwitch({
           </button>
         );
       })}
-      {error && <span className="legend text-observed">{error}</span>}
+      <span role="status" aria-live="polite" className="legend text-observed">
+        {error}
+      </span>
     </div>
   );
 }

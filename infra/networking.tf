@@ -86,7 +86,7 @@ resource "aws_vpc_endpoint" "dynamodb" {
 # --------------------------------------------------------------------------- #
 resource "aws_security_group" "control_plane" {
   name        = "nimbus-${var.environment}-control-plane"
-  description = "API and scheduler. Reachable only from admin_cidr."
+  description = "API and scheduler. Reachable from admin_cidr and, for result callbacks, the workers."
   vpc_id      = aws_vpc.nimbus.id
 
   tags = { Name = "nimbus-${var.environment}-control-plane" }
@@ -109,6 +109,17 @@ resource "aws_vpc_security_group_ingress_rule" "control_plane_api" {
   from_port         = 8000
   to_port           = 8000
   ip_protocol       = "tcp"
+}
+
+# Workers report results back by POSTing to /internal/results. Only the worker
+# security group may do so, which is why that route needs no other auth yet.
+resource "aws_vpc_security_group_ingress_rule" "control_plane_results" {
+  security_group_id            = aws_security_group.control_plane.id
+  description                  = "Result callbacks from workers"
+  referenced_security_group_id = aws_security_group.worker.id
+  from_port                    = 8000
+  to_port                      = 8000
+  ip_protocol                  = "tcp"
 }
 
 resource "aws_vpc_security_group_ingress_rule" "control_plane_ssh" {

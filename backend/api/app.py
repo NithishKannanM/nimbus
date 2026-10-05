@@ -88,7 +88,7 @@ def create_app() -> FastAPI:
     # Remote workers POST their results here. Local workers are in-process and
     # push onto a queue directly, so on the local backend this endpoint would
     # serve nothing.
-    if config.backend == "aws":
+    if config.backend == "aws" or config.worker_transport == "http":
         app.include_router(internal.router)
 
     @app.get("/healthz", tags=["ops"])

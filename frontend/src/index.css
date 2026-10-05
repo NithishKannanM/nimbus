@@ -43,7 +43,7 @@
 @layer components {
   /* A legend plate: the engraved label beside an instrument's dial. */
   .legend {
-    @apply font-legend text-[10px] font-600 uppercase tracking-legend text-declared;
+    @apply font-legend text-[11px] font-600 uppercase tracking-legend text-declared;
   }
 
   .plate {
@@ -54,6 +54,9 @@
 @layer utilities {
   .font-600 {
     font-weight: 600;
+  }
+  .font-700 {
+    font-weight: 700;
   }
 }
 
@@ -85,6 +88,11 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+  }
   .pen,
   .band {
     animation: none;

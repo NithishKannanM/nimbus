@@ -83,14 +83,24 @@ function CandidateRow({
  * reservations is the evidence, at decision granularity, that the boundary the
  * whole project depends on actually holds.
  */
-export function DecisionTrace({ decisions }: { decisions: Decision[] }) {
+export function DecisionTrace({
+  decisions,
+  loading = false,
+  error = false,
+}: {
+  decisions: Decision[];
+  loading?: boolean;
+  error?: boolean;
+}) {
   const [openId, setOpenId] = useState<string | null>(null);
 
   if (decisions.length === 0) {
     return (
       <section>
         <h2 className="legend mb-3">Decision ledger</h2>
-        <p className="font-log text-[12px] text-declared">no placements yet</p>
+        <p className="font-log text-[12px] text-declared">
+          {error ? "api unreachable, no placements loaded yet" : loading ? "reading the ledger…" : "no placements yet"}
+        </p>
       </section>
     );
   }
@@ -100,6 +110,7 @@ export function DecisionTrace({ decisions }: { decisions: Decision[] }) {
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="legend">Decision ledger</h2>
         <p className="legend text-declared">
+          {error ? <span className="text-observed">api unreachable · last known · </span> : null}
           observed is recorded even when placement cannot read it
         </p>
       </div>
@@ -112,7 +123,8 @@ export function DecisionTrace({ decisions }: { decisions: Decision[] }) {
               <button
                 type="button"
                 onClick={() => setOpenId(open ? null : decision.decision_id)}
-                className="flex w-full items-center justify-between gap-3 py-2 text-left hover:bg-ink/5"
+                aria-expanded={open}
+                className="flex min-h-[40px] w-full items-center justify-between gap-3 py-2 text-left transition-colors hover:bg-ink/5"
               >
                 <span className="flex min-w-0 items-baseline gap-3">
                   <span className="font-log text-[12px] text-ink">
@@ -142,7 +154,8 @@ export function DecisionTrace({ decisions }: { decisions: Decision[] }) {
               {open && (
                 <div className="border-t border-ink/10 pb-3 pl-1">
                   <div className="overflow-x-auto">
-                    <table className="w-full">
+                    <table className="w-full min-w-[460px]">
+                      <caption className="sr-only">Candidates considered for {decision.job_id}</caption>
                       <thead>
                         <tr className="legend text-left text-declared">
                           <th className="pb-1 pt-2 font-normal">worker</th>
@@ -179,7 +192,7 @@ export function DecisionTrace({ decisions }: { decisions: Decision[] }) {
                   </p>
 
                   {Object.keys(decision.weights).length > 0 && (
-                    <p className="mt-1.5 font-log text-[10px] text-declared">
+                    <p className="mt-1.5 font-log text-[11px] text-declared">
                       weights:{" "}
                       {Object.entries(decision.weights)
                         .map(([k, v]) => `${k}=${v}`)

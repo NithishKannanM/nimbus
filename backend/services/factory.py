@@ -15,7 +15,7 @@ entire benchmark harness runs with no AWS dependency installed.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Callable
 
 from backend.config import NimbusConfig
 
@@ -24,6 +24,12 @@ log = logging.getLogger("nimbus.factory")
 LOCAL = "local"
 AWS = "aws"
 BACKENDS = (LOCAL, AWS)
+
+# Data-plane transport, orthogonal to the backend: how the scheduler reaches
+# its workers, not where state lives.
+INPROCESS = "inprocess"
+HTTP = "http"
+TRANSPORTS = (INPROCESS, HTTP)
 
 
 class UnknownBackend(ValueError):
@@ -83,6 +89,107 @@ def build_artifacts(config: NimbusConfig) -> Any:
     return S3ArtifactStore(config.s3_bucket, region=config.aws_region or None)
 
 
+def build_metrics(config: NimbusConfig) -> Any:
+    from backend.services.metrics import (  # noqa: PLC0415
+        CloudWatchMetricsSink,
+        InMemoryMetricsSink,
+        NullMetricsSink,
+    )
+
+    if not config.metrics_enabled:
+        return NullMetricsSink()
+    if _check(config) == LOCAL:
+        return InMemoryMetricsSink()
+    return CloudWatchMetricsSink(
+        region=config.aws_region or None,
+        flush_interval_s=config.metrics_flush_interval_s,
+    )
+
+
+def _check_transport(config: NimbusConfig) -> str:
+    transport = (config.worker_transport or INPROCESS).strip().lower()
+    if transport not in TRANSPORTS:
+        raise ValueError(
+            f"unknown worker transport {config.worker_transport!r}; "
+            f"expected one of {', '.join(TRANSPORTS)}"
+        )
+    return transport
+
+
+def build_workers(
+    config: NimbusConfig,
+    *,
+    sink: Callable[[Any], None],
+    cores_for: Callable[[int], list[int] | None],
+    reservations: Callable[[str], int],
+    transport_for: Callable[[str], Any] | None = None,
+) -> dict[str, Any]:
+    """The fleet, unstarted, keyed by worker id.
+
+    ``inprocess`` is the local process-pool fleet. ``http`` is one
+    RemoteWorkerClient per entry in ``worker_endpoints`` -- under http that
+    list, not ``worker_count``, defines the fleet. ``transport_for`` is a test
+    seam: worker_id -> httpx transport (None for the real network).
+    """
+    if _check_transport(config) == INPROCESS:
+        from worker.agent import LocalWorkerAgent  # noqa: PLC0415
+
+        workers: dict[str, Any] = {}
+        for index in range(config.worker_count):
+            worker_id = f"worker-{index + 1}"
+            workers[worker_id] = LocalWorkerAgent(
+                worker_id,
+                slots=config.worker_slots,
+                cores=cores_for(index),
+                sink=sink,
+            )
+        return workers
+
+    from backend.services.remote import RemoteWorkerClient, parse_worker_endpoints  # noqa: PLC0415
+
+    return {
+        worker_id: RemoteWorkerClient(
+            worker_id,
+            url,
+            slots=config.worker_slots,
+            reservations=reservations,
+            dispatch_timeout_s=config.dispatch_timeout_s,
+            probe_timeout_s=config.worker_probe_timeout_s,
+            transport=transport_for(worker_id) if transport_for else None,
+        )
+        for worker_id, url in parse_worker_endpoints(config.worker_endpoints).items()
+    }
+
+
+def build_telemetry_collector(
+    config: NimbusConfig,
+    registry: Any,
+    *,
+    workers: Callable[[], Any],
+    pid_provider: Callable[[str], Any],
+    active_jobs_provider: Callable[[str], int],
+    is_alive: Callable[[str], bool],
+) -> Any:
+    if _check_transport(config) == INPROCESS:
+        from worker.telemetry import TelemetryCollector  # noqa: PLC0415
+
+        return TelemetryCollector(
+            registry,
+            interval_s=config.telemetry_interval_s,
+            pid_provider=pid_provider,
+            active_jobs_provider=active_jobs_provider,
+        )
+
+    from backend.services.remote import RemoteTelemetryCollector  # noqa: PLC0415
+
+    return RemoteTelemetryCollector(
+        registry,
+        workers=workers,
+        interval_s=config.telemetry_interval_s,
+        is_alive=is_alive,
+    )
+
+
 def validate(config: NimbusConfig) -> list[str]:
     """Missing settings for the selected backend, as a list of complaints.
 
@@ -93,9 +200,24 @@ def validate(config: NimbusConfig) -> list[str]:
     """
     problems: list[str] = []
     try:
+        transport = _check_transport(config)
+    except ValueError as exc:
+        problems.append(str(exc))
+    else:
+        if transport == HTTP:
+            from backend.services.remote import parse_worker_endpoints  # noqa: PLC0415
+
+            if not (config.worker_endpoints or "").strip():
+                problems.append("NIMBUS_WORKER_ENDPOINTS is required for worker_transport=http")
+            else:
+                try:
+                    parse_worker_endpoints(config.worker_endpoints)
+                except ValueError as exc:
+                    problems.append(f"NIMBUS_WORKER_ENDPOINTS is invalid: {exc}")
+    try:
         backend = _check(config)
     except UnknownBackend as exc:
-        return [str(exc)]
+        return [*problems, str(exc)]
     if backend == LOCAL:
         return problems
     if not config.sqs_queue_url:

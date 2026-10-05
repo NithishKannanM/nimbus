@@ -69,7 +69,7 @@ export function HeaderRail({
             {readsTelemetry ? "placement reads it" : "placement cannot read it"}
           </Lamp>
           {stale && (
-            <span className="border border-observed px-1.5 py-0.5 font-legend text-[10px] font-600 uppercase tracking-legend text-observed">
+            <span role="status" className="border border-observed px-1.5 py-0.5 font-legend text-[11px] font-600 uppercase tracking-legend text-observed">
               api unreachable · last known
             </span>
           )}

@@ -84,3 +84,5 @@ scrolling, they may as well not be reported.
 - **No CloudWatch.** Everything here is Channel 2 scheduling telemetry read
   through the Nimbus API (`docs/architecture.md` §10). Nothing in the scheduler
   reads CloudWatch, and neither does this.
+
+Design contract: see `/DESIGN.md` at the repo root. Note `declared` graphite was darkened from #6B7169 to #5E645C so small labels pass WCAG AA (5.3:1 on paper).

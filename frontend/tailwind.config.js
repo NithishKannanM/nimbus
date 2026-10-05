@@ -10,7 +10,7 @@ export default {
         paper: "#EEF0EA",
         rule: "#D5D8CE",
         ink: "#1C1F1A",
-        declared: "#6B7169",
+        declared: "#5E645C",
         reserved: "#1B4D8F",
         observed: "#C2410C",
       },

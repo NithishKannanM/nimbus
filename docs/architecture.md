@@ -251,6 +251,45 @@ Trade-offs, stated honestly:
 - ❌ Scheduler↔worker connectivity is now on the critical path (security group
   rules, private subnet routing).
 
+#### Transport: in-process or HTTP
+
+`NIMBUS_WORKER_TRANSPORT` selects what the engine's `_workers` hold; the
+scheduler, reaper and heartbeat code do not know which. `factory.build_workers`
+returns either `LocalWorkerAgent`s (`inprocess`, the default) or one
+`RemoteWorkerClient` per entry of `NIMBUS_WORKER_ENDPOINTS`
+(`"worker-1=http://host:8080,..."`; the ids become the registered worker ids).
+
+- **Dispatch.** `try_execute` is `POST /execute` with the `Job` as JSON, 1 s
+  connect timeout and `NIMBUS_DISPATCH_TIMEOUT_S` read timeout. A `202` whose
+  body names the expected `worker_id` is acceptance; `409` is "at capacity".
+  Both a `409` and any dispatch error (5xx, connection error, timeout, reply from
+  the wrong worker) return `False`, which takes the existing rejection path:
+  re-queue by deferral, no retry budget spent (rule 5 above).
+- **Ambiguous read timeout.** A timeout on `/execute` may mean the worker
+  accepted the job. The job is re-dispatched with the *same* `execution_id`; the
+  agent's dedupe and the engine's execution-id guard (§8, guard 3) keep
+  completion exactly-once. This relies on that dedupe, not on the transport.
+- **Liveness.** `alive()` is `GET /health`: true only for a `200` that is ok, not
+  `crashed`, and carries the expected `worker_id`. The heartbeat emitter beats a
+  worker only when it is not simulated-failed *and* `alive()`; a worker whose
+  `/health` fails ages into `UNHEALTHY` exactly as a killed local one does.
+- **Telemetry.** `RemoteTelemetryCollector` polls `GET /telemetry` on the
+  telemetry interval and ingests successes only. It skips workers simulated as
+  failed, because `ingest_telemetry` also refreshes the heartbeat.
+- **Results.** The worker's `ResultReporter` POSTs the result to the control
+  plane's `/internal/results`, retrying; the router is mounted when
+  `backend == aws` *or* `worker_transport == http`. Duplicate and superseded
+  results are discarded by the same guards as local completions.
+- **Abandon.** `abandon(execution_id)` is `POST /abandon`, fire-and-forget on a
+  one-thread executor, so a dead worker cannot stall the reaper inside `tick()`.
+  It returns once the call is queued, not once the worker has acted.
+- **Failure simulation.** `fail_worker(hard=False)` (a partition) works on remote
+  workers; `hard=True` raises `NotImplementedError` -- a remote host's pool is
+  not ours to crash.
+
+Built and tested locally (`MockTransport` bridges into the real FastAPI apps,
+`tests/integration/test_http_dataplane.py`); **never run across a real network.**
+
 ### 3.4 The `JobQueue` interface
 
 Modelled directly on SQS semantics so that local behaviour transfers:
@@ -517,6 +556,35 @@ meaningful.
 Emitted from the control plane via `PutMetricData`, batched (20 datums/call) to
 keep cost and API volume bounded — see `docs/cost-model.md`.
 
+*As built* (`backend/services/metrics.py`, emission in `backend/services/engine.py`):
+the engine calls `metrics.emit(...)` and never CloudWatch. `build_metrics` picks
+`NullMetricsSink` (`NIMBUS_METRICS_ENABLED=false`), `InMemoryMetricsSink` (local)
+or `CloudWatchMetricsSink` (`aws`). Datums are **not** one per event: emissions
+are folded per series (metric + dimension combination) into a `StatisticSet`
+(count, sum, min, max), and each flush (`NIMBUS_METRICS_FLUSH_INTERVAL_S`,
+default 60 s, plus a final one on `stop()`) sends one datum per series, 20 per
+`PutMetricData` call. A failed call is counted and its chunk dropped; it never
+raises into the scheduler. Emitting a metric with a dimension outside its allowed
+set is a `ValueError`, because every dimension combination is a billable series.
+
+| Metric | Dimensions | Emitted |
+|---|---|---|
+| `JobsSubmitted` | `WorkloadClass` | `submit()`, after enqueue |
+| `JobsCompleted` | `Strategy`, `WorkloadClass` | after the conditional completion write succeeds (guard 5) |
+| `ExecutionTimeMs` | `Strategy`, `WorkloadClass` | same point; the worker-reported execution time |
+| `JobsFailed` | `Strategy`, `WorkloadClass` | the dead-letter and retries-exhausted branches |
+| `JobsRetried` | `Strategy`, `WorkloadClass` | the requeue branch |
+| `SchedulingLatencyMs` | `Strategy` | after every decision is recorded (`decision_latency_us / 1000`) |
+| `QueueWaitMs` | `Strategy`, `WorkloadClass` | after `ACCEPTED`, first attempt only (`scheduled_at - created_at`) |
+| `DuplicateExecutions` | `Strategy` | both stale-result sites |
+| `QueueDepthVisible`, `QueueDepthInFlight` | none | gauge sample, from `queue.depth()` |
+| `WorkerHealthy` | `WorkerId` | gauge sample; 1 if `HEALTHY`, else 0 |
+
+Gauges are sampled in `tick()` every `NIMBUS_METRICS_SAMPLE_INTERVAL_S` (default
+10 s), not on every tick. `stats()` and `reliability()` are unchanged. Tested
+against a hand-written `FakeCloudWatch`; **nothing has been written to real
+CloudWatch.**
+
 **Channel 2 — Nimbus scheduling telemetry (`WorkerRegistry`), 2–5 s.**
 CPU%, memory%, active jobs, queue depth, load trend, heartbeat age. Lives in
 process memory + `StateStore`, **not** in CloudWatch. It is a scheduler input, at
@@ -554,6 +622,13 @@ truth, serialised into every benchmark manifest so runs are reproducible.
 | `NIMBUS_VISIBILITY_TIMEOUT_S` | `60.0` | queue lease |
 | `NIMBUS_SCHEDULER_TICK_S` | `0.05` | scheduler loop period |
 | `NIMBUS_SEED` | `1337` | benchmark determinism |
+| `NIMBUS_WORKER_TRANSPORT` | `inprocess` | `inprocess` \| `http`; `http` needs `NIMBUS_WORKER_ENDPOINTS` (checked by `factory.validate`) |
+| `NIMBUS_WORKER_ENDPOINTS` | *(empty)* | `id=http://host:8080,...`; ids must be unique, scheme http(s) |
+| `NIMBUS_DISPATCH_TIMEOUT_S` | `5.0` | `POST /execute` read timeout |
+| `NIMBUS_WORKER_PROBE_TIMEOUT_S` | `2.0` | `GET /health`, `/telemetry`, `/stats` |
+| `NIMBUS_METRICS_ENABLED` | `true` | `false` -> null sink |
+| `NIMBUS_METRICS_FLUSH_INTERVAL_S` | `60.0` | `PutMetricData` cadence |
+| `NIMBUS_METRICS_SAMPLE_INTERVAL_S` | `10.0` | queue-depth / worker-health gauge cadence |
 
 ---
 
@@ -569,8 +644,14 @@ truth, serialised into every benchmark manifest so runs are reproducible.
 | S3 `nimbus-artifacts-*`, SSE-S3, public access blocked, versioning off | artifacts | `s3.tf` |
 | CloudWatch log group `/nimbus/*`, 7-day retention; custom metrics | observability | `cloudwatch.tf` |
 | IAM instance profiles (worker ≠ control plane) | least privilege | `iam.tf` |
-| Security groups | scheduler → worker `:8080` only, no public worker ingress | `networking.tf` |
+| Security groups | scheduler → worker `:8080`; worker → control plane `:8000` (results); no public worker ingress | `networking.tf` |
 | *(conditional)* AWS Batch CE + queue + job definition | native baseline | `batch.tf` |
+
+The control plane has a fixed private IP (`cidrhost(<public subnet>, 10)`) so
+workers can be handed `NIMBUS_CONTROL_PLANE_URL` without depending on the
+control-plane instance, which in turn lists the workers' addresses in
+`NIMBUS_WORKER_ENDPOINTS`; that would otherwise be a Terraform cycle. `terraform
+fmt -check` and `terraform validate` pass; `apply` has never been run.
 
 `batch.tf` is created **only if** the Batch comparison is actually run
 (`docs/experiments.md` §6). Otherwise it does not exist.
@@ -594,7 +675,8 @@ nimbus/
 ├── backend/
 │   ├── api/            jobs, workers, scheduler, benchmarks, admin, internal
 │   ├── models/         job, worker, telemetry, decision, enums, state machine
-│   ├── services/       engine, registry, reaper, retry, benchmarks, factory
+│   ├── services/       engine, registry, reaper, retry, benchmarks, factory,
+│   │                   remote (HTTP dispatcher), metrics (MetricsSink + CloudWatch)
 │   │   ├── queue/      base.py, local.py, sqs.py
 │   │   ├── store/      base.py, local.py, dynamodb.py
 │   │   └── artifacts/  base.py, local.py, s3.py
@@ -602,7 +684,7 @@ nimbus/
 ├── scheduler/          base.py (policy ABCs) views.py (telemetry boundary)
 │                       ordering.py strategy.py replay.py
 │                       placement/ round_robin.py static_resource_aware.py adaptive.py
-├── worker/             agent.py api.py executor.py telemetry.py heartbeat.py workloads/
+├── worker/             agent.py api.py batch_entrypoint.py executor.py telemetry.py heartbeat.py workloads/
 ├── benchmark/          profiles.py generator.py pressure.py runner.py metrics.py
 │                       manifest.py analysis.py report.py cost.py
 ├── frontend/           React + TS + Vite + Tailwind + Recharts (read-only dashboard)

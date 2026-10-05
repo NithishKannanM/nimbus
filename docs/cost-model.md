@@ -86,8 +86,27 @@ labelled as such until measured.
 | DynamoDB reads | ~3 (job fetch, runtime stats, dashboard) | §7.1 |
 | S3 PUTs | 2 (output + stdout); 0 for jobs with inline payloads | §9 |
 | S3 GETs | ~1 | §9 |
-| CloudWatch datums | ~6, batched 20/call ⇒ ~0.3 API calls | §10 |
+| CloudWatch datums | **not per job** -- time-driven, see below | §10 |
 | Log bytes | ~2 KB | §10 |
+
+CloudWatch is not per-job either. `CloudWatchMetricsSink` folds every emission
+into a `StatisticSet` per **series** (metric + dimension combination) and, once
+per flush (60 s), sends one datum per series, 20 per `PutMetricData` call. So:
+
+- **API calls** = `ceil(active series / 20)` per minute while the control plane
+  runs, whatever the job rate. A burst of 1,000 jobs adds no calls.
+- **Custom-metric cost** is per series, not per datum:
+  `$0.30 × series` per metric-month. Series come from the dimension table in
+  `architecture.md` §10 (`Strategy` x `WorkloadClass` x `WorkerId` where each
+  metric allows them). Upper bound with 4 strategies, 4 workload classes and 3
+  workers: `JobsSubmitted` 4, five `S x W` metrics 80, `SchedulingLatencyMs` and
+  `DuplicateExecutions` 8, two queue gauges 2, `WorkerHealthy` 3 = **97**
+  series. A deployment running one strategy at a time: 4 + 20 + 2 + 2 + 3 =
+  **31**. These are ceilings from the code's allowed dimensions, not measured
+  counts -- a series that never receives an emission is never sent. Whether
+  CloudWatch prorates a series that exists only for the experiment hours is
+  taken from the price page and not verified here; if it does not, 31 series
+  held a full month is ~$9.30, which exceeds the §4 line.
 
 Telemetry, which is **per-second, not per-job**: 3 workers at a 2 s interval =
 1.5 writes/s = 129,600 DynamoDB writes/day if persisted at full rate. That alone
@@ -109,9 +128,14 @@ model exists before Phase 5 rather than after.
 | DynamoDB reads (300 / 3,000) | $0.00004 | $0.00038 |
 | S3 PUT (200 / 2,000) | $0.00100 | $0.01000 |
 | S3 GET (100 / 1,000) | $0.00004 | $0.00040 |
-| CloudWatch API (30 / 300 calls) | $0.00030 | $0.00300 |
+| CloudWatch API (30 / 300 calls) -- *superseded, see below* | $0.00030 | $0.00300 |
 | CloudWatch Logs (0.2 / 2 MB) | $0.00010 | $0.00100 |
 | **Marginal total** | **≈ $0.0021** | **≈ $0.0208** |
+
+*The CloudWatch API row is the old per-job estimate (6 datums/job). Calls are now
+time-driven (~2/minute at 31 series, so ~8 calls for a 4-minute run, ~34 for a
+17-minute one), which makes the row a deliberate overstatement; it is left in so
+the totals and the per-1000 table below are not silently re-derived.*
 
 **The marginal per-job cost is ~$0.00002 — effectively zero.** Two consequences,
 both of which shape how results are reported:

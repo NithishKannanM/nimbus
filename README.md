@@ -11,7 +11,7 @@ An **experimental** distributed-systems project investigating one question:
 Local pipeline, four placement strategies, psutil telemetry, replayable decision
 traces, a reliability layer that survives a killed worker, a benchmark API with
 derived reports, a read-only operations dashboard, and complete Terraform.
-**498 tests pass.**
+**637 tests pass** (Linux, Python 3.14).
 
 **No AWS resources have ever been provisioned.** `terraform apply` was never
 run, so Phase 5's criterion — *the same test suite green against
@@ -20,6 +20,14 @@ written and tested against hand-written fakes of those APIs, which pins our
 understanding of their semantics and is not the same thing as validating it.
 That is also why Phase 8 publishes [no AWS Batch numbers at
 all](docs/aws-batch-baseline.md).
+
+Since then the missing pieces have been written, and are equally unrun on AWS:
+an HTTP scheduler-to-worker dispatcher (`backend/services/remote.py`), the
+Batch entry point (`worker/batch_entrypoint.py`) and CloudWatch operational
+metrics (`backend/services/metrics.py`). They are covered by local tests --
+HTTP both directions over `httpx.MockTransport` bridges into the real FastAPI
+apps -- and `terraform validate` now passes. **"Tested locally" is all that has
+been established about any of them.**
 
 **Through Phase 2, telemetry was collected, recorded and exposed — and no
 scheduler read it.** That deliberate blindness is what makes Phase 3
@@ -128,6 +136,8 @@ cd frontend && npm install && npm run build
 cd frontend && npm run dev                   # http://localhost:5173
 ```
 
+The dashboard's visual rules (plotter-paper palette, tokens, panel contract) are in [`DESIGN.md`](DESIGN.md).
+
 ### Failure simulation
 
 ```bash
@@ -149,6 +159,27 @@ export TF_VAR_admin_cidr="$(curl -s https://checkip.amazonaws.com)/32"
 scripts/demo/deploy.sh          # ~$0.08/hour
 scripts/demo/teardown.sh        # pulls archives down first, then destroys
 ```
+
+To drive remote workers from a control plane you started yourself, run
+`worker/api.py` on each worker host and point the control plane at them. The
+venv commands from the quickstart above still apply on each host.
+
+```bash
+# on each worker host (identity, slots and where to POST results)
+NIMBUS_WORKER_ID=worker-1 NIMBUS_CONTROL_PLANE_URL=http://<control-plane>:8000 \
+  uvicorn worker.api:app --host 0.0.0.0 --port 8080
+
+# on the control plane
+export NIMBUS_WORKER_TRANSPORT=http
+export NIMBUS_WORKER_ENDPOINTS="worker-1=http://10.0.1.11:8080,worker-2=http://10.0.1.12:8080"
+uvicorn backend.api.app:app --host 0.0.0.0 --port 8000
+```
+
+The endpoint ids become the registered worker ids; `/internal/results` is
+mounted whenever the backend is `aws` or the transport is `http`. The worker API
+has no authentication beyond the network (security group) in front of it, and
+this path has never run on real AWS -- only against local mocks and loopback.
+The Terraform in `infra/` wires the same variables for the EC2 fleet.
 
 **Never run against this project's own results.** No AWS resources were ever
 provisioned for it (see [`docs/aws-batch-baseline.md`](docs/aws-batch-baseline.md)),
@@ -271,6 +302,7 @@ claim was not supported by adequate repetitions and is **withdrawn**.
 | [`docs/results.md`](docs/results.md) | **Phase 9 analysis** — every table derived from the archive by `scripts/generate_report.py`, per-profile evidence classes, statistics, cost, conclusions |
 | [`docs/aws-batch-baseline.md`](docs/aws-batch-baseline.md) | **Phase 8** — the seven fairness conditions, which are unmet, and the resulting refusal to publish any Batch number |
 | [`frontend/README.md`](frontend/README.md) | **Phase 6 dashboard** — what its design is doing, and what it deliberately does not do |
+| [`DESIGN.md`](DESIGN.md) | The frontend design contract (plotter-paper palette, tokens, panel rules) the dashboard is built to |
 
 ---
 
@@ -536,7 +568,7 @@ memory a worker allocates.
 ## Testing
 
 ```
-498 passed
+637 passed
 ```
 
 | Suite | Tests | Covers |
@@ -567,9 +599,18 @@ memory a worker allocates.
 | **`integration/test_benchmark_api.py`** | 15 | **`POST /benchmarks` → archived `raw.jsonl` + derived report; serialised execution; cancellation at cell boundaries** |
 | **`failure/test_worker_failure.py`** | 7 | **Kill a worker for real — pool destroyed, children killed, heartbeat stopped — and the job completes elsewhere. The loss is *detected*, never announced** |
 | **`failure/test_retry_and_timeout.py`** | 17 | **Timeout → reclaim → retry → exhaust; a rejected dispatch never costs a retry; a superseded attempt's result is discarded; reservations release exactly once** |
+| **`unit/test_remote_dispatch.py`** | 46 | **HTTP dispatcher over `MockTransport`: endpoint parsing, 202/409/5xx/timeout/identity-mismatch handling, `/health` liveness, remote telemetry collector, factory transport selection, engine on `worker_transport=http`** |
+| **`unit/test_worker_api.py`** | 17 | **Worker HTTP API against a fake agent: `/execute` 202/409/422, `/abandon`, `/health`, `/telemetry`, `/stats`; `ResultReporter` retry and drain; Linux-only real-agent run** |
+| **`unit/test_internal_api.py`** | 15 | **`/internal/results` intake: validation, defaults, real engine completes once, duplicate and superseded results discarded, mounted only for `aws` or `http`** |
+| **`unit/test_batch_entrypoint.py`** | 19 | **Batch entry point: exit-code contract, argument parsing, BLAS pinned before numpy, shared `worker.executor.execute`, scratch cleanup, subprocess smoke, `batch.tf` command contract** |
+| **`unit/test_cloudwatch_metrics.py`** | 20 | **Metric names, namespace pinned to the IAM condition, per-series aggregation into StatisticSets, 20-datum batching, throttling dropped without raising, no module-scope boto3** |
+| **`unit/test_engine_metrics.py`** | 14 | **Engine emission points, replay counted as a duplicate not a completion, gauge sampling, `metrics_enabled=False`, flush on stop** |
+| **`integration/test_http_dataplane.py`** | 8 | **HTTP both directions through bridges into the real FastAPI apps: completion, 409 costs no attempt, duplicate result, timeout triggers `/abandon`, unhealthy `/health`; one Linux-only variant with real `LocalWorkerAgent`s** |
 
 **Phase 1: 104. Phase 2 added 110. Phase 3 added 60. Phases 4–9 added 224.
-Total 498** — 401 unit, 73 integration, 24 failure. No test has ever been
+Total 498** — 401 unit, 73 integration, 24 failure. **The HTTP data plane, batch
+entry point and metrics work added 139 more: 637 total** — 532 unit, 81
+integration, 24 failure (collected count; all pass on Linux). No test has ever been
 deleted; the 16 Phase 1 scheduler tests were ported to the ordering/placement
 split with every assertion preserved. The Phase 3 additions
 are concentrated in `test_adaptive_placement.py` (33), with the rest covering
@@ -681,6 +722,16 @@ never executed against the real services. `infra/` is complete and the adapters
 are covered by unit tests against hand-written fakes of the SQS, DynamoDB and S3
 surfaces — which pins what we believe those semantics are, and is not the same
 as confirming it.
+
+Since that was first written, the three things Phase 5 was missing in code have
+been added: the scheduler-side HTTP dispatcher and remote telemetry/liveness
+(`backend/services/remote.py`, selected by `NIMBUS_WORKER_TRANSPORT=http`),
+`worker/batch_entrypoint.py`, and CloudWatch Channel 1
+(`backend/services/metrics.py`); `infra/` was wired for the HTTP path and now
+passes `terraform fmt -check` and `terraform validate` (validate caught a real
+bug: `aws_batch_compute_environment` used `name`, which provider 5.x rejects).
+All of it is code-complete and tested locally, **none of it has run on AWS**, and
+the exit criterion above is exactly as unmet as before.
 
 Still not built, and still deliberately: `docker-compose.yml`. The whole system
 is one process locally, and composing it would be theatre.

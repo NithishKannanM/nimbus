@@ -82,18 +82,27 @@ export function BenchmarkTable() {
 
   return (
     <div className="plate p-4">
-      <h2 className="legend mb-3">Archived runs</h2>
+      <h2 className="legend mb-3">
+        Archived runs
+        {(runs.failures > 1 || profiles.failures > 1) && (
+          <span role="status" className="ml-3 text-observed">api unreachable · last known</span>
+        )}
+      </h2>
 
       {summary.length === 0 ? (
-        <p className="font-log text-[11px] text-declared">no archived runs on disk</p>
+        <p className="font-log text-[11px] text-declared">
+          {runs.loading ? "reading the archive…" : runs.error ? "api unreachable, archive not loaded" : "no archived runs on disk"}
+        </p>
       ) : (
-        <table className="mb-4 w-full">
+        <div className="mb-4 overflow-x-auto">
+        <table className="w-full min-w-[360px]">
+          <caption className="sr-only">Evidence class per benchmark profile</caption>
           <thead>
             <tr className="legend text-left text-declared">
-              <th className="pb-1 font-normal">profile</th>
-              <th className="pb-1 text-right font-normal">runs</th>
-              <th className="pb-1 text-right font-normal">admissible</th>
-              <th className="pb-1 text-right font-normal">evidence</th>
+              <th scope="col" className="pb-1 font-normal">profile</th>
+              <th scope="col" className="pb-1 text-right font-normal">runs</th>
+              <th scope="col" className="pb-1 text-right font-normal">admissible</th>
+              <th scope="col" className="pb-1 text-right font-normal">evidence</th>
             </tr>
           </thead>
           <tbody>
@@ -118,17 +127,20 @@ export function BenchmarkTable() {
             ))}
           </tbody>
         </table>
+        </div>
       )}
 
-      <table className="w-full">
+      <div className="overflow-x-auto">
+      <table className="w-full min-w-[480px]">
+        <caption className="sr-only">Most recent archived runs</caption>
         <thead>
           <tr className="legend text-left text-declared">
-            <th className="pb-1 font-normal">run</th>
-            <th className="pb-1 font-normal">profile</th>
-            <th className="pb-1 font-normal">strategy</th>
-            <th className="pb-1 text-right font-normal">jobs</th>
-            <th className="pb-1 text-right font-normal">makespan</th>
-            <th className="pb-1 text-right font-normal">flag</th>
+            <th scope="col" className="pb-1 font-normal">run</th>
+            <th scope="col" className="pb-1 font-normal">profile</th>
+            <th scope="col" className="pb-1 font-normal">strategy</th>
+            <th scope="col" className="pb-1 text-right font-normal">jobs</th>
+            <th scope="col" className="pb-1 text-right font-normal">makespan</th>
+            <th scope="col" className="pb-1 text-right font-normal">flag</th>
           </tr>
         </thead>
         <tbody>
@@ -159,11 +171,14 @@ export function BenchmarkTable() {
           })}
         </tbody>
       </table>
+      </div>
       {recent.length === 0 && (
-        <p className="py-4 text-center font-log text-[11px] text-declared">no archived runs</p>
+        <p className="py-4 text-center font-log text-[11px] text-declared">
+          {runs.loading ? "reading the archive…" : "no archived runs"}
+        </p>
       )}
 
-      <p className="mt-3 font-log text-[10px] text-declared">
+      <p className="mt-3 font-log text-[11px] text-declared">
         full statistical comparisons: docs/results.md
       </p>
     </div>

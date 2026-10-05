@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useEffect, useId, useRef } from "react";
 
 import { INK, LANE_H, WINDOW_S } from "../lib/theme";
 
@@ -174,7 +174,7 @@ function WorkerLane({ lane, width, uid }: { lane: Lane; width: number; uid: stri
               y={y(v, height) + (v === 100 ? 7 : -1)}
               textAnchor="end"
               className="font-log"
-              fontSize={8}
+              fontSize={9}
               fill={INK.declared}
             >
               {v}
@@ -211,10 +211,10 @@ function WorkerLane({ lane, width, uid }: { lane: Lane; width: number; uid: stri
         </>
       )}
 
-      <text x={0} y={height / 2 - 4} className="font-log" fontSize={12} fill={INK.ink} opacity={lane.healthy ? 1 : 0.45}>
+      <text x={0} y={height / 2 - 4} className="font-log" fontSize={12} fill={INK.ink} opacity={lane.healthy ? 1 : 0.7}>
         {lane.workerId}
       </text>
-      <text x={0} y={height / 2 + 10} className="font-legend" fontSize={8.5} fill={INK.declared} letterSpacing="0.12em">
+      <text x={0} y={height / 2 + 10} className="font-legend" fontSize={9} fill={INK.declared} letterSpacing="0.12em">
         {lane.healthy ? "HEALTHY" : "NOT HEALTHY"}
       </text>
 
@@ -252,10 +252,24 @@ export function DivergenceStrip({
   const height = lanes.length * LANE_H;
   const now = width - PAD_R;
 
+  // On a narrow screen the strip scrolls, and the live edge is on the right.
+  // Open there once; after that the reader's own scroll position is theirs.
+  const scroller = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const el = scroller.current;
+    if (el) el.scrollLeft = el.scrollWidth;
+  }, []);
+
   return (
-    <figure className="relative">
+    <figure
+      ref={scroller}
+      className="relative overflow-x-auto"
+      tabIndex={0}
+      aria-label="Divergence strip, scrolls horizontally on narrow screens"
+    >
       <svg
         width="100%"
+        style={{ minWidth: 720 }}
         viewBox={`0 0 ${width} ${height + 10}`}
         role="img"
         aria-label={`Reserved capacity against observed host CPU for ${lanes.length} workers over the last ${WINDOW_S} seconds`}
@@ -289,10 +303,10 @@ export function DivergenceStrip({
           strokeWidth={1}
           opacity={0.6}
         />
-        <text x={now} y={height + 2} textAnchor="middle" className="font-legend" fontSize={8.5} fill={INK.ink} letterSpacing="0.14em">
+        <text x={now} y={height + 2} textAnchor="middle" className="font-legend" fontSize={9} fill={INK.ink} letterSpacing="0.14em">
           NOW
         </text>
-        <text x={PAD_L} y={height + 2} className="font-legend" fontSize={8.5} fill={INK.declared} letterSpacing="0.12em">
+        <text x={PAD_L} y={height + 2} className="font-legend" fontSize={9} fill={INK.declared} letterSpacing="0.12em">
           {WINDOW_S}s OF PAPER · RECORDING SINCE {recordingSince}
         </text>
       </svg>

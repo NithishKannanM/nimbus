@@ -17,33 +17,49 @@ import threading
 import time
 from datetime import datetime
 from queue import Empty, Queue
-from typing import Any
+from typing import Any, Callable
+
+import httpx
 
 from backend.config import NimbusConfig, get_config
 from backend.models.decision import SchedulingDecision
 from backend.models.enums import TERMINAL_STATUSES, JobEvent, JobStatus, WorkerStatus
 from backend.models.job import IllegalTransition, Job, utcnow
 from backend.models.worker import FleetSnapshot
-from backend.services.factory import build_artifacts, build_queue, build_store, validate
+from backend.services.factory import (
+    build_artifacts,
+    build_metrics,
+    build_queue,
+    build_store,
+    build_telemetry_collector,
+    build_workers,
+    validate,
+)
+from backend.services.metrics import Metric
 from backend.services.queue.base import Lease, LeaseExpired, QueueDepth
 from backend.services.reaper import Reaper, ReaperReport, Reclamation
 from backend.services.registry import WorkerRegistry
 from backend.services.retry import BackoffPolicy
 from backend.services.store.base import ConditionFailed
 from scheduler import build_scheduler
-from worker.agent import LocalWorkerAgent
 from worker.executor import ExecutionResult
 from worker.heartbeat import HeartbeatEmitter
-from worker.telemetry import TelemetryCollector
 from worker.workloads import registry as workloads
 
 log = logging.getLogger("nimbus.engine")
 
 
 class NimbusEngine:
-    def __init__(self, config: NimbusConfig | None = None) -> None:
+    def __init__(
+        self,
+        config: NimbusConfig | None = None,
+        *,
+        http_transport: Callable[[str], httpx.BaseTransport] | None = None,
+    ) -> None:
         self.config = config or get_config()
         cfg = self.config
+        #: test seam: worker_id -> httpx transport for worker_transport="http".
+        self._http_transport = http_transport
 
         # Queue, store and artifacts come from the factory, which is the only
         # place in the codebase that branches on NIMBUS_BACKEND. Nothing below
@@ -55,6 +71,9 @@ class NimbusEngine:
         self.queue = build_queue(cfg)
         self.store = build_store(cfg)
         self.artifacts = build_artifacts(cfg)
+        # Channel 1 (docs/architecture.md section 10). Write-only from here:
+        # nothing in the scheduler reads these back.
+        self.metrics = build_metrics(cfg)
         self.registry = WorkerRegistry(
             heartbeat_timeout_s=cfg.heartbeat_timeout_s,
             eviction_timeout_s=cfg.eviction_timeout_s,
@@ -78,13 +97,18 @@ class NimbusEngine:
             # worker stops beating and the control plane infers the loss. If
             # the engine simply marked it UNHEALTHY, the failure tests would be
             # exercising a setter rather than the detection path.
-            is_alive=lambda worker_id: worker_id not in self._failed_workers,
+            # Remote workers are additionally probed over HTTP.
+            is_alive=lambda worker_id: (
+                worker_id not in self._failed_workers and self._worker_alive(worker_id)
+            ),
         )
-        self.telemetry = TelemetryCollector(
+        self.telemetry = build_telemetry_collector(
+            cfg,
             self.registry,
-            interval_s=cfg.telemetry_interval_s,
+            workers=lambda: self._workers,
             pid_provider=self._worker_pids,
             active_jobs_provider=self._worker_active_jobs,
+            is_alive=lambda worker_id: worker_id not in self._failed_workers,
         )
         self._telemetry_enabled = cfg.telemetry_enabled
 
@@ -104,9 +128,11 @@ class NimbusEngine:
         )
         self._reaper_interval_s = cfg.reaper_interval_s
         self._last_sweep = 0.0
+        self._metrics_sample_interval_s = cfg.metrics_sample_interval_s
+        self._last_gauge_sample = 0.0
         self._failed_workers: set[str] = set()
 
-        self._workers: dict[str, LocalWorkerAgent] = {}
+        self._workers: dict[str, Any] = {}
         self._leases: dict[str, Lease] = {}
         self._lease_extended_at: dict[str, float] = {}
         self._completions: Queue[ExecutionResult] = Queue()
@@ -130,6 +156,7 @@ class NimbusEngine:
         if self._running.is_set():
             return
         self._start_fleet()
+        self.metrics.start()
         # Heartbeats are unconditional: with telemetry off, workers must still
         # be able to prove liveness or the whole fleet drifts to UNHEALTHY.
         self.heartbeats.start()
@@ -152,29 +179,37 @@ class NimbusEngine:
         for agent in self._workers.values():
             agent.stop(wait=wait)
         self._workers.clear()
+        self.metrics.stop()  # final flush
 
     def _start_fleet(self) -> None:
         cfg = self.config
-        for index in range(cfg.worker_count):
-            worker_id = f"worker-{index + 1}"
-            cores = self._cores_for(index)
-            agent = LocalWorkerAgent(
-                worker_id,
-                slots=cfg.worker_slots,
-                cores=cores,
-                sink=self._completions.put,
-            )
+        # Local process pools or HTTP clients to remote hosts: the factory
+        # decides, and everything below treats them identically.
+        fleet = build_workers(
+            cfg,
+            sink=self._completions.put,
+            cores_for=self._cores_for,
+            reservations=lambda wid: len(self.registry.reserved_executions(wid)),
+            transport_for=self._http_transport,
+        )
+        for worker_id, agent in fleet.items():
             agent.start()
             self._workers[worker_id] = agent
             self.registry.register(
                 worker_id,
-                slots=cfg.worker_slots,
+                slots=agent.slots,
                 capacity_cpu_units=cfg.worker_cpu_units,
                 capacity_memory_mb=cfg.worker_memory_mb,
                 # Telemetry scopes a worker's CPU to its own cores, which is
                 # what makes per-worker CPU an independent local signal.
-                cores=tuple(cores or ()),
+                cores=tuple(agent.cores or ()),
             )
+
+    def _worker_alive(self, worker_id: str) -> bool:
+        """Liveness the heartbeat emitter acts on. In-process agents are always
+        alive; a remote client probes its host's /health."""
+        agent = self._workers.get(worker_id)
+        return agent is None or agent.alive()
 
     def _cores_for(self, index: int) -> list[int] | None:
         """Disjoint core set per worker, so local workers approximate
@@ -217,6 +252,7 @@ class NimbusEngine:
         self.queue.enqueue(job.job_id)
         with self._lock:
             self._stats["submitted"] += 1
+        self.metrics.emit(Metric.JOBS_SUBMITTED, WorkloadClass=job.workload_class.value)
         return job
 
     # ------------------------------------------------------------------ #
@@ -237,6 +273,7 @@ class NimbusEngine:
         self._drain_completions()
         self._extend_leases()
         self._maybe_sweep()
+        self._maybe_sample_gauges()
         self._dispatch_round()
 
     def _maybe_sweep(self) -> None:
@@ -255,6 +292,26 @@ class NimbusEngine:
             self.reaper.sweep()
         except Exception:
             log.exception("reaper sweep failed")
+
+    def _maybe_sample_gauges(self) -> None:
+        """Sample queue depth and worker health on ``metrics_sample_interval_s``.
+
+        Gauges are sampled, not event-driven, so they get their own cadence
+        rather than riding every 20 ms tick.
+        """
+        now = time.monotonic()
+        if now - self._last_gauge_sample < self._metrics_sample_interval_s:
+            return
+        self._last_gauge_sample = now
+        depth = self.queue.depth()
+        self.metrics.emit(Metric.QUEUE_DEPTH_VISIBLE, depth.visible)
+        self.metrics.emit(Metric.QUEUE_DEPTH_IN_FLIGHT, depth.in_flight)
+        for worker in self.registry.snapshot().workers:
+            self.metrics.emit(
+                Metric.WORKER_HEALTHY,
+                1.0 if worker.status is WorkerStatus.HEALTHY else 0.0,
+                WorkerId=worker.worker_id,
+            )
 
     def _dispatch_round(self) -> None:
         snapshot = self.registry.snapshot()
@@ -293,6 +350,10 @@ class NimbusEngine:
         snapshot = self.registry.snapshot()
         decision = self.scheduler.place(job, snapshot, now)
         self.store.put_decision(decision)
+        strategy = self.scheduler.name
+        self.metrics.emit(
+            Metric.SCHEDULING_LATENCY_MS, decision.decision_latency_us / 1000.0, Strategy=strategy
+        )
 
         if decision.selected_worker is None:
             with self._lock:
@@ -347,6 +408,15 @@ class NimbusEngine:
 
         running = scheduled.apply(JobEvent.ACCEPTED, at=utcnow())
         self.store.update_job(running, expect_status=JobStatus.SCHEDULED)
+        if running.attempts == 1 and running.scheduled_at is not None:
+            # First attempt only: on a retry created_at would fold earlier
+            # attempts' run time into "waiting in the queue".
+            self.metrics.emit(
+                Metric.QUEUE_WAIT_MS,
+                (running.scheduled_at - running.created_at).total_seconds() * 1000.0,
+                Strategy=strategy,
+                WorkloadClass=job.workload_class.value,
+            )
         with self._lock:
             self._leases[job.job_id] = lease
             self._lease_extended_at[job.job_id] = time.monotonic()
@@ -395,6 +465,7 @@ class NimbusEngine:
         if job.status is not JobStatus.RUNNING or job.execution_id != result.execution_id:
             with self._lock:
                 self._stats["stale_results"] += 1
+            self.metrics.emit(Metric.DUPLICATE_EXECUTIONS, Strategy=self.scheduler.name)
             log.warning(
                 "discarding %s result for %s (job is %s at %s)",
                 result.execution_id, result.job_id, job.status, job.execution_id,
@@ -410,9 +481,13 @@ class NimbusEngine:
             except ConditionFailed:
                 with self._lock:
                     self._stats["stale_results"] += 1
+                self.metrics.emit(Metric.DUPLICATE_EXECUTIONS, Strategy=self.scheduler.name)
                 return
             with self._lock:
                 self._stats["completed"] += 1
+            dims = {"Strategy": self.scheduler.name, "WorkloadClass": job.workload_class.value}
+            self.metrics.emit(Metric.JOBS_COMPLETED, **dims)
+            self.metrics.emit(Metric.EXECUTION_TIME_MS, result.execution_time_ms, **dims)
             self._release_lease(result.job_id, ack=True)
             return
 
@@ -468,6 +543,7 @@ class NimbusEngine:
                 self._stats["dead_lettered"] += 1
                 self._stats["failed"] += 1
             self._forget_lease(interim.job_id)
+            self._emit_job_metric(Metric.JOBS_FAILED, interim)
             log.warning("%s dead-lettered: %s", interim.job_id, reason)
             return True
 
@@ -480,6 +556,7 @@ class NimbusEngine:
             with self._lock:
                 self._stats["exhausted"] += 1
                 self._stats["failed"] += 1
+            self._emit_job_metric(Metric.JOBS_FAILED, final)
             self._release_lease(final.job_id, ack=True)
             log.warning(
                 "%s failed after %d/%d attempts: %s",
@@ -496,11 +573,17 @@ class NimbusEngine:
         self._return_to_queue(requeued.job_id, delay)
         with self._lock:
             self._stats["retried"] += 1
+        self._emit_job_metric(Metric.JOBS_RETRIED, requeued)
         log.info(
             "%s retrying (attempt %d/%d) in %.2fs: %s",
             requeued.job_id, requeued.attempts + 1, requeued.max_attempts, delay, reason,
         )
         return True
+
+    def _emit_job_metric(self, metric: Metric, job: Job) -> None:
+        self.metrics.emit(
+            metric, Strategy=self.scheduler.name, WorkloadClass=job.workload_class.value
+        )
 
     def _return_to_queue(self, job_id: str, delay_s: float) -> None:
         """Make a job visible again after backoff.

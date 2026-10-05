@@ -57,16 +57,16 @@ export default function App() {
 
   if (workers.loading && scheduler.loading) {
     return (
-      <main className="relative z-10 grid min-h-screen place-items-center">
-        <p className="legend text-declared">connecting to the control plane</p>
+      <main className="relative z-10 grid min-h-[100dvh] place-items-center">
+        <p role="status" className="legend text-declared">connecting to the control plane</p>
       </main>
     );
   }
 
   if (!scheduler.data || !workers.data) {
     return (
-      <main className="relative z-10 grid min-h-screen place-items-center px-6">
-        <div className="max-w-md">
+      <main className="relative z-10 grid min-h-[100dvh] place-items-center px-6">
+        <div role="alert" className="max-w-md">
           <p className="legend mb-3 text-observed">no control plane</p>
           <p className="font-log text-[13px] leading-relaxed text-ink">
             Start it with{" "}
@@ -111,7 +111,7 @@ export default function App() {
           </h2>
           {/* The key is the argument in six words, so it sits with the figure
               rather than in a corner of the page. */}
-          <div className="flex items-center gap-5">
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
             <span className="flex items-center gap-2">
               <span aria-hidden className="inline-block h-[2px] w-5 bg-reserved" />
               <span className="legend text-reserved">reserved · what Nimbus believes</span>
@@ -140,10 +140,14 @@ export default function App() {
       </section>
 
       <section className="mt-10">
-        <DecisionTrace decisions={decisions.data ?? []} />
+        <DecisionTrace
+          decisions={decisions.data ?? []}
+          loading={decisions.loading}
+          error={decisions.failures > 1}
+        />
       </section>
 
-      <section className="mt-10 grid gap-6 lg:grid-cols-2">
+      <section className="mt-10 grid grid-cols-1 gap-6 lg:grid-cols-2">
         <QueueLedger scheduler={scheduler.data} />
         <JobsLog />
       </section>
@@ -152,7 +156,7 @@ export default function App() {
         <BenchmarkTable />
       </section>
 
-      <footer className="mt-10 border-t border-ink/20 pt-4 font-log text-[10px] leading-relaxed text-declared">
+      <footer className="mt-10 border-t border-ink/20 pt-4 font-log text-[11px] leading-relaxed text-declared">
         Strategy switching is the one write this dashboard makes
         (PUT /scheduler, unauthenticated by design). Destructive controls
         still live on the admin router, not mounted unless

@@ -48,14 +48,23 @@ publish a comparison it knows to be rigged in its favour.
 |---|---|---|---|
 | 1 | Compute environment pre-scaled to `minvCpus` = 6, warm before the run | ❌ not met | `infra/batch.tf` is **written** and sets `min_vcpus = 6`, but was never applied |
 | 2 | Container image pre-pulled onto the instances | ❌ not met | No image was ever built or pushed; no ECR repository exists |
-| 3 | Identical workload code, same entry point | ⚠️ designed, unbuilt | `batch.tf` invokes `worker.batch_entrypoint` against the same closed workload registry; that entry point is not implemented |
+| 3 | Identical workload code, same entry point | ✅ satisfied in code, unrun | `worker/batch_entrypoint.py` calls `worker.executor.execute` -- the same function the Nimbus pool child runs -- after the same registry validation. Verified locally (`tests/unit/test_batch_entrypoint.py`, incl. a subprocess smoke run and a spy proving the shared function); never executed under Batch |
 | 4 | Identical instance types and count | ❌ not met | Neither fleet exists |
 | 5 | Same seeded job sequence and arrival process | ✅ available | `benchmark/generator.py` is deterministic in `(profile, seed, job_count)` and would drive both |
 | 6 | Measurement from Batch `startedAt`/`stoppedAt` **and** separately end-to-end from `createdAt` | ⚠️ designed, unrun | The dual-measurement protocol is specified; no runs exist to apply it to |
 | 7 | ≥5 trials | ❌ not met | Zero trials |
 
-Four conditions unmet, two designed but unexercised. **One** is satisfied. The
-rule is *all of these, or no number*, so: no number.
+Four conditions unmet, one designed but unexercised. **Two** are satisfied in the
+sense of being available or written (5 and 3), and neither has been exercised on
+AWS. The rule is *all of these, or no number*, so: no number.
+
+The entry point's contract, for when it does run: one JSON record
+(`schema: nimbus.batch.v1`) on stdout; exit `0` workload ok, `1` workload
+failed, `2` usage error (bad arguments, unknown job type, payload failing
+validation). `infra/batch.tf` uses `evaluate_on_exit` to `EXIT` on `2` -- a
+deterministic error that retrying would only repeat -- and to retry every other
+exit code and infrastructure failure up to `max_attempts`. BLAS thread env vars
+are pinned before numpy is imported, as in the Nimbus worker.
 
 ## 3. What would be needed to lift this refusal
 
@@ -65,10 +74,11 @@ Concretely, and in order. None of it is research; it is all execution.
    Cost: the warm compute environment is the expensive line — 6 vCPUs held at
    `minVcpus > 0` for the duration, roughly `$0.06/hour` on `t3.small`, budgeted
    at `$0.50` for an 8-hour window (`docs/cost-model.md` §4).
-2. Build and push a container image running the Nimbus workload registry, and
-   implement `worker/batch_entrypoint.py` as a thin `run_workload` shim. It must
-   import the *same* module the Nimbus worker executes, or the comparison is
-   between two programs rather than between two schedulers.
+2. Build and push a container image running the Nimbus workload registry.
+   `worker/batch_entrypoint.py` now exists and imports the *same* execution
+   function the Nimbus worker runs, which the comparison needs (otherwise it is
+   between two programs rather than between two schedulers); the image and a
+   first real Batch run do not exist.
 3. Pre-pull the image onto the warm instances and confirm it before submitting.
 4. Submit the identical seeded job sequence to both systems, ≥5 trials,
    interleaved.

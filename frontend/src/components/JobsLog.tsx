@@ -33,17 +33,23 @@ export function JobsLog() {
 
   return (
     <div className="plate p-4">
-      <h2 className="legend mb-3">Jobs</h2>
-      <div className="max-h-72 overflow-auto">
-        <table className="w-full">
+      <h2 className="legend mb-3">
+        Jobs
+        {jobs.failures > 1 && (
+          <span role="status" className="ml-3 text-observed">api unreachable · last known</span>
+        )}
+      </h2>
+      <div className="max-h-72 overflow-auto pr-2 [scrollbar-gutter:stable]" tabIndex={0} role="region" aria-label="Recent jobs">
+        <table className="w-full min-w-[420px]">
+          <caption className="sr-only">Recent jobs, newest first</caption>
           <thead className="sticky top-0 bg-paper">
             <tr className="legend text-left text-declared">
-              <th className="pb-1 font-normal">job</th>
-              <th className="pb-1 font-normal">type</th>
-              <th className="pb-1 font-normal">status</th>
-              <th className="pb-1 font-normal">worker</th>
-              <th className="pb-1 text-right font-normal">attempts</th>
-              <th className="pb-1 text-right font-normal">exec</th>
+              <th scope="col" className="pb-1 font-normal">job</th>
+              <th scope="col" className="pb-1 font-normal">type</th>
+              <th scope="col" className="pb-1 font-normal">status</th>
+              <th scope="col" className="pb-1 font-normal">worker</th>
+              <th scope="col" className="pb-1 text-right font-normal">attempts</th>
+              <th scope="col" className="pb-1 text-right font-normal">exec</th>
             </tr>
           </thead>
           <tbody>
@@ -79,7 +85,9 @@ export function JobsLog() {
           </tbody>
         </table>
         {rows.length === 0 && (
-          <p className="py-4 text-center font-log text-[11px] text-declared">no jobs yet</p>
+          <p className="py-4 text-center font-log text-[11px] text-declared">
+            {jobs.loading ? "reading the log…" : jobs.error ? "api unreachable, no jobs loaded" : "no jobs yet"}
+          </p>
         )}
       </div>
     </div>

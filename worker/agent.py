@@ -113,6 +113,11 @@ class LocalWorkerAgent:
     def crashed(self) -> bool:
         return self._crashed
 
+    def alive(self) -> bool:
+        """In-process workers are alive by construction; a simulated failure is
+        tracked by the engine, not here. Remote clients actually probe."""
+        return True
+
     def try_execute(self, job: Job) -> bool:
         """Accept or reject a dispatch. Returns False when at capacity --
         the HTTP equivalent of a 409, and a fast signal the scheduler can act

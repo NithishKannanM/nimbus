@@ -4,7 +4,7 @@ Scratch note for picking the thread back up. Delete it whenever it stops being
 useful — the durable record is the README roadmap, `docs/results.md`, and
 `docs/aws-batch-baseline.md`.
 
-**State at close:** 498 backend tests pass (untouched this session), frontend
+**State at close:** 637 backend tests pass on Linux, Python 3.14 (the HTTP data plane, batch entry point and metrics work added 139; see items 1/3/4), frontend
 typechecks and builds clean (171kB gzip), `dist/` is current with source,
 `docs/results.md` regenerates from 157 archived runs. The dashboard redesign
 (see below) is complete and verified end-to-end against a live server.
@@ -57,20 +57,33 @@ the ledger (interaction was code-reviewed, not clicked in headless Chrome).
 
 Ordered by whether it blocks a claim, not by size.
 
-1. **The AWS data plane is a half-bridge.** `worker/api.py` (HTTP worker agent)
-   and `backend/api/internal.py` (results intake) exist, but the engine only
-   ever constructs `LocalWorkerAgent` and calls `try_execute()` in-process
-   (`engine.py:161,327`). There is no scheduler-side HTTP dispatcher, so under
-   `NIMBUS_BACKEND=aws` the control plane would still run workers inside its own
-   process and never talk to the EC2 fleet. Both modules also have zero test
-   coverage. This is a functional hole, not just an untested path.
+1. **HTTP data plane -- done, never run on AWS.** `backend/services/remote.py`
+   (`RemoteWorkerClient`, `RemoteTelemetryCollector`) is selected by
+   `NIMBUS_WORKER_TRANSPORT=http` + `NIMBUS_WORKER_ENDPOINTS`; `/internal/results`
+   is mounted for `aws` or `http`; `infra/ec2.tf` gives the control plane a fixed
+   private IP and the workers their id and control-plane URL. Covered by
+   `test_remote_dispatch.py`, `test_worker_api.py`, `test_internal_api.py` and
+   `integration/test_http_dataplane.py` (HTTP both ways over `MockTransport`
+   bridges into the real FastAPI apps). **Remains:** an AWS run -- a
+   control plane and workers on separate hosts, with real latency, security
+   groups and partial failure. Remote `fail_worker(hard=True)` is deliberately
+   `NotImplementedError`.
 2. **Phase 5 exit criterion unmet** — `terraform apply` never run, so the AWS
    code path has never executed against the real services.
-3. **`worker/batch_entrypoint.py` does not exist**, but `infra/batch.tf:122`
-   invokes it. Blocks the Batch baseline.
-4. **CloudWatch Channel 1 never built.** `docs/architecture.md` §10 specifies 11
-   operational metrics and `infra/iam.tf` grants `PutMetricData` on namespace
-   `Nimbus`; nothing writes to it.
+3. **`worker/batch_entrypoint.py` -- done, never run on AWS.** It calls the same
+   `worker.executor.execute` the pool child runs (exit 0 ok / 1 workload failed /
+   2 usage; `batch.tf` does not retry on 2). `test_batch_entrypoint.py` includes
+   a subprocess smoke run. **Remains:** build and push an image, apply with
+   `enable_batch_baseline = true`, and run it under real Batch. The Batch
+   baseline is still unpublished: all the other conditions in
+   `docs/aws-batch-baseline.md` stay unmet.
+4. **CloudWatch Channel 1 -- done, never run on AWS.** `backend/services/metrics.py`
+   (`CloudWatchMetricsSink`) and the engine's emission points write the 11
+   metrics of `docs/architecture.md` §10 to namespace `Nimbus`, aggregated per
+   series into StatisticSets. Tested against a hand-written `FakeCloudWatch`,
+   which pins our reading of `PutMetricData`, not CloudWatch's behaviour.
+   **Remains:** an AWS run to see the series actually appear and the IAM
+   namespace condition accept them.
 5. **`priority` ordering** — unimplemented, deliberately, and documented as such.
 6. **Re-run the headline experiment on EC2** — `docs/limitations.md` §3 requires
    it before any result transfers off this machine.
@@ -92,6 +105,7 @@ PYTHONPATH=.venv/lib/python3.14/site-packages:. python3 -m pytest -q
 Every `.venv/bin/...` invocation in the README will fail. Either keep using the
 `PYTHONPATH` form or rebuild the venv somewhere ext4.
 
-**There is no git repository here.** ~18k lines of Python, 1.8k of TypeScript
-and 1.5k of Terraform with no version control and no history to fall back on.
-Worth `git init` before the next substantial change.
+**Git.** A repository exists (one initial commit); the HTTP data plane, batch
+entry point, metrics and Terraform changes above are uncommitted working-tree
+edits. An earlier version of this note said there was no repository -- that was
+wrong.

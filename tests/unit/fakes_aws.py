@@ -276,3 +276,71 @@ class _Body:
 
     def read(self) -> bytes:
         return self._data
+
+
+# --------------------------------------------------------------------------- #
+# CloudWatch
+# --------------------------------------------------------------------------- #
+_CW_UNITS = frozenset(
+    {
+        "Seconds", "Microseconds", "Milliseconds", "Bytes", "Kilobytes", "Megabytes",
+        "Gigabytes", "Terabytes", "Bits", "Kilobits", "Megabits", "Gigabits", "Terabits",
+        "Percent", "Count", "Bytes/Second", "Kilobytes/Second", "Megabytes/Second",
+        "Gigabytes/Second", "Terabytes/Second", "Bits/Second", "Kilobits/Second",
+        "Megabits/Second", "Gigabits/Second", "Terabits/Second", "Count/Second", "None",
+    }
+)
+
+
+class FakeCloudWatch:
+    """``put_metric_data`` with the request validation that actually bites.
+
+    Mirrors the limits a real call enforces -- 1000 datums, one value form per
+    datum, a consistent statistic set, <= 30 dimensions, a known unit, and no
+    ``AWS/`` namespace -- so a sink that builds a malformed datum fails here
+    rather than being silently dropped in production. ``fail_times`` makes the
+    first N calls throttle, which is how the failure path gets exercised.
+    """
+
+    def __init__(self, fail_times: int = 0) -> None:
+        self.fail_times = fail_times
+        self.calls: list[dict[str, Any]] = []
+
+    def put_metric_data(self, *, Namespace: str, MetricData: list[dict[str, Any]]) -> dict:
+        self.calls.append({"Namespace": Namespace, "MetricData": list(MetricData)})
+        if len(self.calls) <= self.fail_times:
+            raise ClientError("Throttling", "Rate exceeded")
+        if not Namespace or Namespace.startswith("AWS/"):
+            raise ClientError("InvalidParameterValue", f"bad namespace: {Namespace!r}")
+        if not MetricData or len(MetricData) > 1000:
+            raise ClientError("InvalidParameterValue", "MetricData must hold 1..1000 datums")
+        for datum in MetricData:
+            self._validate(datum)
+        return {}
+
+    @staticmethod
+    def _validate(datum: dict[str, Any]) -> None:
+        if not datum.get("MetricName"):
+            raise ClientError("InvalidParameterValue", "MetricName is required")
+        forms = [k for k in ("Value", "Values", "StatisticValues") if k in datum]
+        if len(forms) != 1:
+            raise ClientError(
+                "InvalidParameterCombination",
+                "exactly one of Value, Values, StatisticValues is required",
+            )
+        stats = datum.get("StatisticValues")
+        if stats is not None:
+            if stats["SampleCount"] <= 0 or stats["Minimum"] > stats["Maximum"]:
+                raise ClientError("InvalidParameterValue", f"bad StatisticValues: {stats}")
+        dims = datum.get("Dimensions", [])
+        if len(dims) > 30:
+            raise ClientError("InvalidParameterValue", "more than 30 dimensions")
+        for dim in dims:
+            if not dim.get("Name") or not dim.get("Value"):
+                raise ClientError("InvalidParameterValue", "dimension Name/Value required")
+        if "Unit" in datum and datum["Unit"] not in _CW_UNITS:
+            raise ClientError("InvalidParameterValue", f"bad Unit: {datum['Unit']!r}")
+
+    def datums(self, name: str) -> list[dict[str, Any]]:
+        """Every accepted-or-attempted datum with this MetricName, in call order."""
+        return [d for c in self.calls for d in c["MetricData"] if d["MetricName"] == name]

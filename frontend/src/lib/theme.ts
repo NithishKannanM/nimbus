@@ -20,7 +20,7 @@ export const INK = {
   /** Primary pen. Near-black with a green cast. */
   ink: "#1C1F1A",
   /** Graphite: operator configuration, inert, never inferred. */
-  declared: "#6B7169",
+  declared: "#5E645C",
   /** Blue ballpoint: Nimbus's own bookkeeping. What it believes it committed. */
   reserved: "#1B4D8F",
   /** Red pen: what the host is actually doing. */

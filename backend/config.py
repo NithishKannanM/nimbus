@@ -37,6 +37,21 @@ class NimbusConfig(BaseSettings):
     worker_cpu_units: int = 2048
     worker_memory_mb: int = 4096
 
+    # --- data-plane transport (orthogonal to `backend`) ---------------------
+    # inprocess: the engine runs LocalWorkerAgents in its own process.
+    # http: the engine dispatches to remote worker/api.py agents.
+    worker_transport: str = "inprocess"  # inprocess | http
+    #: "worker-1=http://10.0.1.11:8080,worker-2=http://10.0.1.12:8080". http
+    #: only; under http this list, not worker_count, defines the fleet.
+    worker_endpoints: str = ""
+    dispatch_timeout_s: float = 5.0  # POST /execute read timeout
+    worker_probe_timeout_s: float = 2.0  # GET /health, /telemetry, /stats
+
+    # --- operational metrics: CloudWatch Channel 1 (docs/architecture.md s10)
+    metrics_enabled: bool = True
+    metrics_flush_interval_s: float = 60.0  # PutMetricData cadence
+    metrics_sample_interval_s: float = 10.0  # gauge sampling cadence
+
     # --- telemetry / health ------------------------------------------------
     # Telemetry is OBSERVED state. It is collected, stored and exposed, and is
     # deliberately not readable by any placement policy implemented so far

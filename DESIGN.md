@@ -1,137 +1,142 @@
 ---
 version: alpha
 name: Nimbus-dashboard
-description: "A plotter-paper operations view. Light sage-tinted stock (#EEF0EA) printed with graph-paper ruling, drawn on with a four-pen ink set. Three inks are claims about a worker (DECLARED graphite, RESERVED blue ballpoint, OBSERVED red); red also marks anything that diverged from expectation. Flat, square, shadowless. Three type voices: Instrument Sans legend plates, Martian Mono readouts, IBM Plex Mono logbook."
+description: "An industrial brutalist operations view, Swiss industrial print mode. Matte unbleached paper (#F2F0EB), carbon ink (#0A0A0A), one hazard accent (#F54F00). Three descriptions of a worker stay visually distinct: DECLARED grey hatch, RESERVED solid carbon, OBSERVED hazard. Hazard also marks anything that diverged from expectation. Flat, square, shadowless, gradient-free. Archivo Black macro type over IBM Plex Mono data."
 
 colors:
-  paper: "#EEF0EA"
-  rule: "#D5D8CE"
-  ink: "#1C1F1A"
-  declared: "#5E645C"
-  reserved: "#1B4D8F"
-  observed: "#C2410C"
+  paper: "#F2F0EB"
+  ink: "#0A0A0A"
+  rule: "#0A0A0A"
+  hairline: "#C9C5BB"
+  declared: "#5F5C56"
+  reserved: "#0A0A0A"
+  observed: "#F54F00"
+  observedText: "#B33A00"
 
 typography:
-  legend:   { fontFamily: Instrument Sans, fontSize: 11px, fontWeight: 600, letterSpacing: 0.14em, textTransform: uppercase }
-  heading-1: { fontFamily: Instrument Sans, fontSize: 13px, fontWeight: 700, letterSpacing: 0.14em, textTransform: uppercase }
-  heading-2: { fontFamily: Instrument Sans, fontSize: 11px, fontWeight: 700, letterSpacing: 0.14em, textTransform: uppercase }
-  finding:  { fontFamily: IBM Plex Mono, fontSize: 13px, lineHeight: relaxed, maxWidth: 62ch }
-  log-body: { fontFamily: IBM Plex Mono, fontSize: 11px }
-  log-id:   { fontFamily: IBM Plex Mono, fontSize: 12-13px }
-  readout:  { fontFamily: Martian Mono, fontSize: 15px }
-  svg-readout: { fontFamily: Martian Mono, fontSize: 13px/700 observed, 11px reserved }
-  footnote: { fontFamily: IBM Plex Mono, fontSize: 11px }
+  masthead: { fontFamily: Archivo Black, fontSize: "clamp(3.5rem, 11vw, 9.5rem)", letterSpacing: -0.04em, lineHeight: 0.9, textTransform: uppercase }
+  section-title: { fontFamily: Archivo Black, fontSize: "clamp(1.6rem, 3.6vw, 2.75rem)", letterSpacing: -0.04em, lineHeight: 0.9, textTransform: uppercase }
+  big-numeral: { fontFamily: Archivo Black, fontSize: "48px fleet / 30px queue / 28px strip" }
+  label: { fontFamily: IBM Plex Mono, fontSize: 11px, fontWeight: 500, letterSpacing: 0.08em, textTransform: uppercase }
+  data: { fontFamily: IBM Plex Mono, fontSize: 12-13px, fontVariantNumeric: tabular-nums }
+  finding: { fontFamily: IBM Plex Mono, fontSize: 15-16px, lineHeight: relaxed, maxWidth: 62ch, textTransform: none }
 
 rounded: { all: 0px }
-spacing: { page-x: 24px, page-y: 28px, section-gap: 40px, hero-gap: 32px, panel-pad: 16px, grid-gap: 24px }
+spacing: { page-x: 16px/24px, page-top: 20px, section-gap: 40px, section-pad-top: 20px, grid-gap: 32px }
 ---
 
 # Nimbus dashboard design system
 
-This file is the contract for `frontend/src`. Tokens live in `frontend/src/lib/theme.ts` (INK, WINDOW_S, LANE_H) and are mirrored as literals in `frontend/tailwind.config.js`; change both together. Rationale and behaviour notes live in `frontend/README.md`.
+This file is the contract for `frontend/src`. Tokens live in `frontend/src/lib/theme.ts` (INK, WINDOW_S, LANE_H, and the SVG-pattern helpers) and are mirrored as literals in `frontend/tailwind.config.js`; change both together. No hex appears anywhere else in `src`. Rationale and behaviour notes live in `frontend/README.md`.
 
 ## Overview
 
-A bound lab record, not a devtool. The page makes one argument: a worker has three separate descriptions (DECLARED by the operator, RESERVED by Nimbus's bookkeeping, OBSERVED by psutil on the host), they are allowed to disagree, and only one placement policy may read the third. The palette therefore carries meaning, not status. The signature element is the **divergence band**: per worker, reserved (blue) against observed (red), the area between them shaded and split by sign, with one derived sentence under it (`Finding.tsx`).
+On 2026-10-05 the user replaced the earlier "plotter paper" direction with **industrial brutalist, Swiss industrial print (light) mode**. The ink semantics carried over unchanged: graphite became the declared grey hatch, blue ballpoint became carbon black, and red became hazard orange. Only the surface changed: sage graph paper and soft hairlines are now matte stock, solid 2px black rules, a giant masthead and dense mono tables. The dark CRT mode is not used and must not be mixed in.
 
-The user rejected a dark-slate devtool look as "generic AI". Light stock, ruling, ink and mono type are the identity. Everything is flat and square.
+The page still makes one argument: a worker has three separate descriptions (DECLARED by the operator, RESERVED by Nimbus's bookkeeping, OBSERVED by psutil on the host), they are allowed to disagree, and only one placement policy may read the third. The palette therefore carries meaning, not status, and the three descriptions differ in treatment as well as colour so they survive greyscale. The signature element is the **divergence strip**: per worker, reserved (solid black line) against observed (hazard line), the area between them hatched and split by sign, with one derived sentence under it (`Finding.tsx`).
+
+Decoration (`[ ]`, `///`, `+` crosshairs, index numerals 01..07) is structural only. Every value on screen comes from the API or is a real constant (worker ids, strategy, policy version, the 90 s window). No invented revision strings.
 
 ## Colors
 
 | Token | Hex | Role | Contrast on paper |
 |---|---|---|---|
-| paper | #EEF0EA | ground, sage-tinted, not cream | n/a |
-| rule | #D5D8CE | graph ruling (body::before, 40px + 8px grids, opacity 0.34) | decorative |
-| ink | #1C1F1A | primary text, strokes, active control fill | 14.5:1 |
-| declared | #5E645C | graphite: operator config, inert, labels, secondary text | 5.3:1 |
-| reserved | #1B4D8F | blue ballpoint: Nimbus bookkeeping, normal in-flight states | 7.3:1 |
-| observed | #C2410C | red pen: the reading contradicts the register | 4.5:1 (bold/legend or 11px+ only) |
+| paper | #F2F0EB | matte substrate | n/a |
+| ink | #0A0A0A | text, all structural rules (1px/2px solid), active control fill | 17.4:1 |
+| rule | #0A0A0A | alias of ink for structural lines | 17.4:1 |
+| hairline | #C9C5BB | light row rules inside tables; never text | 1.5:1 (decorative) |
+| declared | #5F5C56 | operator config: outline or hatch, labels, secondary text; never a solid fill | 5.9:1 |
+| reserved | #0A0A0A | Nimbus bookkeeping, solid | 17.4:1 |
+| observed | #F54F00 | hazard: marks, fills, strokes, bars, hatch, and type >=24px bold | 3.07:1 (graphics and large type, WCAG 3:1) |
+| observedText | #B33A00 | the accent for small text | 5.2:1 (body text, 4.5:1) |
+
+Also: paper on ink 17.4:1 (active buttons), ink on hazard about 5.7:1.
+
+The brief's hazard #FF4F00 measured 2.89:1, below the 3:1 needed for graphics, so it was shifted to #F54F00 (3.07:1), the smallest change that passes. observedText #B33A00 passed unchanged.
 
 Semantics:
-- DECLARED = graphite, RESERVED = blue, OBSERVED = red. Never merge them into one utilisation figure.
-- Red also means "diverged from expectation": retried, failed, timed out, dead-lettered, no candidate, tie-break, truncated, low load, stale poll ("api unreachable"), unhealthy workers. A zero friction counter is ink, not red.
-- Neutral tints are ink at opacity (`ink/10`, `/15`, `/20`, `/30`), never new greys.
-- Band fills: observed above reserved = red @ 0.18, reserved above observed = blue @ 0.12.
-- No green, no success/error pair, no fifth colour, no dark ground, no gradients. (declared was #6B7169 at 4.36:1; darkened to #5E645C to pass AA as text.)
-- Never hard-code a hex in a component. Use Tailwind token classes, or `INK.*` in SVG/inline styles.
+- DECLARED = grey hatch/outline, RESERVED = solid carbon, OBSERVED = hazard. Never merge them into one utilisation figure or score.
+- Hazard also means "diverged from expectation": retried, failed, timed out, dead-lettered, no candidate, tie-break, truncated, low load, stale poll, api unreachable, unhealthy workers. A zero friction counter is ink, not hazard.
+- Exactly one accent. No green, no red/green status pair, no second accent, no dark ground.
+- Job statuses: RUNNING = ink bold, COMPLETED = plain ink, divergent states = observedText.
+- Never hard-code a hex outside `theme.ts`. Use token classes, or `INK.*` in SVG and inline styles.
 
 ## Typography
 
-- **Instrument Sans** (`font-legend`): legend plates and labels. Uppercase, 0.14em tracking, 600 weight, 11px (`.legend` class). h1 13px/700, section h2 11px/700.
-- **Martian Mono** (`font-meter`): readouts only, the number you look at. Queue stats 15px; strip readouts 13px (observed, bold) over 11px (reserved).
-- **IBM Plex Mono** (`font-log`): logbook, tables, traces, the Finding sentence. Body 11px, ids 12-13px, finding 13px relaxed, `max-w-[62ch]`.
-- `font-variant-numeric: tabular-nums` on body. Use `.stat` on right-aligned numbers.
-- Floor is 11px for HTML and 9px for SVG axis text. Do not add 10px or smaller. No Inter, no serif.
-- Weights available: 400, 500, 600 (`font-600`), 700 (`font-700`).
+- **Archivo Black** (`.display`, `font-display`): macro type. Uppercase, letter-spacing -0.04em, line-height 0.9. It ships one weight: never add `font-bold`. Masthead `clamp(3.5rem, 11vw, 9.5rem)`; numbered section titles `clamp(1.6rem, 3.6vw, 2.75rem)` as "01" (grey) plus the name; big numerals: observed % in fleet plates (48px), queue counters (30px), strip readouts (28px). Hazard is only allowed on type this large.
+- **IBM Plex Mono** (`font-mono`): everything else. `.label` is 11px, 500, uppercase, tracking 0.08em, for labels and metadata; data cells 12-13px with tabular-nums. The Finding sentence is sentence-case Plex Mono, 15-16px, with a 6px left rule: hazard when it reports a divergence, black otherwise.
+- Small accent text is `text-observedText`, never `text-observed`.
+- Floor is 11px for HTML and 10px for SVG axis text.
 
 ## Layout
 
-- Single column, `max-w-[1180px]`, `px-6 py-7`, centred. Order: header rail + strategy switch, divergence figure + Finding, Fleet, Decision ledger, Queue and Jobs (2-col at `lg`, gap-6), Archived runs, footer.
-- Section rhythm: `mt-8` after the header, `mt-10` between sections. Panels use `p-4`.
-- Dividers are `border-ink/15..20` hairlines or `gap-px bg-ink/15` seams (Fleet grid). Prefer hairlines over boxes; `.plate` (border `ink/15`, `bg-paper/80`) is the only boxed container.
-- Fleet: `sm:grid-cols-2 lg:grid-cols-3`; each plate rows are `grid-cols-[64px_1fr_auto]`.
-- Divergence SVG: viewBox 1080 wide, PAD_L 104, PAD_R 78, LANE_H 66 with a 20px GUTTER, window 90 s, newest sample pinned to the right edge. Fixed time axis, never rescaled to data.
+- Single column, `max-w-[1280px]`, `px-4 sm:px-6`. The masthead has NIMBUS left and a bracketed metadata cluster right (strategy formula, policy version, workers, telemetry lamp, placement lamp), then a 2px black rule, then the strategy switch.
+- Sections 01 The divergence, 02 Fleet, 03 Decision ledger, 04 Queue, 05 Jobs, 06 Archived runs, 07 Notes. Each is separated by a full-width 2px black rule (`border-t-2 border-ink pt-5`, `mt-10`).
+- Fleet uses solid borders, not a `gap-px` black parent: with 3 workers on a 2-column row a black gap would show a black hole in the empty cell. Other compartments use solid borders too.
+- Queue and Jobs: `grid-cols-1 lg:grid-cols-2`, `gap-x-8 gap-y-10`.
+- Divergence SVG: viewBox 1080 wide, PAD_L 104, PAD_R 104, LANE_H 84 with a 20px GUTTER, window 90 s, newest sample pinned to the right edge. Fixed time axis, never rescaled to data. The figure scrolls horizontally below 720px and opens at its live right edge.
+- Jobs log scroll region keeps `scrollbar-gutter: stable`.
+- Warning stripe: a 16px band of repeating 45 degree hazard stripes under the masthead, shown only while `isDiverged(lanes, telemetryOn)` is true, the same function the Finding reads.
+- Paper grain: one fixed SVG-noise layer, opacity 0.05, `pointer-events: none`, hidden under `prefers-reduced-transparency`.
 
 ## Elevation & Depth
 
-None. No shadows, no blur stacks, no glass. Depth is hairlines, the ruled ground, and ink opacity. `.plate` carries a 1px backdrop blur only so ruling does not fight table text. Do not add drop shadows.
+None. No shadows, blur, gradients or translucency. Depth is solid black rules. The only layered effect is the grain overlay at 5% opacity. Hatching and stripes are SVG patterns (hard-edged), not CSS gradients.
 
 ## Shapes
 
-Radius 0 everywhere. Square lamps (8px), square buttons, square badges. Pen heads are a 2.6px circle plus a triangular nib; the nib marker is reused in the decision ledger to mark the selected worker.
+Radius 0 everywhere; Tailwind `borderRadius` is zeroed globally. Square lamps, square buttons, square pen-head marks (the same square marks the selected worker in the decision ledger). `+` crosshairs sit at strip axis intersections.
 
 ## Components
 
-- **HeaderRail**: h1, strategy written as `strategy = ordering + placement · version`, two Lamps (filled = true, hollow = false; red fill because both concern observed telemetry), stale badge (red outline, `role=status`).
-- **StrategySwitch**: the only write (`PUT /scheduler`). Square buttons, `min-h-[32px]`, active = `bg-ink text-paper`, others `border-ink/30`; `aria-pressed`, group labelled, 1px press translate, error in `role=status`. Focus ring is the global 2px reserved outline.
-- **DivergenceStrip**: SVG `role=img` with aria-label; scroll container (`min-width: 720px`) so text stays legible at 375px; pens draw in once (`.pen`, 1100ms), band fades in (`.band`).
-- **Finding**: one derived sentence; three branches (telemetry off, waiting, agree below 20 points, diverged). Never hand-written.
-- **FleetPlates**: three rows per worker, declared (no bar), reserved bar, observed bar (3px, `role=meter`), heartbeat footer.
+- **Masthead (HeaderRail)**: h1 NIMBUS, `[ STRATEGY fifo = ordering + placement ]`, `[ POLICY VERSION ]`, `[ WORKERS n ]`, two square lamps (filled hazard = true, hollow grey = false), stale badge (hazard outline, `role=status`), conditional warning stripe.
+- **StrategySwitch**: the only write (`PUT /scheduler`). Square segmented mono buttons, 2px black borders, active = black fill with paper text, hover = 3px hazard underline, global 3px hazard focus-visible outline; `aria-pressed`, labelled group, error in `role=status`.
+- **DivergenceStrip**: SVG `role=img`; reserved = solid black 2.5px line, observed = hazard 2.5px line; band between = hatch (hazard 45 degree where observed > reserved, grey -45 degree where reserved > observed); solid black lane separators; `+` marks; mono axis labels; Archivo observed numeral and `RES n%` readout at the right edge. Lines draw in once (`.pen`), band fades in (`.band`).
+- **Finding**: one derived sentence; branches unchanged (telemetry off, waiting, agree below 20 points, booked-but-idle, unbooked load). The left rule follows `isDiverged`.
+- **FleetPlates**: numbered plates, `[ STATUS ]`, big hazard observed numeral, three rows with distinct treatments (declared = hatched outline track, reserved = solid black fill, observed = hazard fill; the two measured ones carry `role=meter`).
 - **DecisionTrace**: expandable ledger rows (`aria-expanded`), candidate table always shows the observed column even when null.
-- **QueueLedger / JobsLog / BenchmarkTable**: `.plate` panels, tables with `scope=col` headers and sr-only captions, horizontal scroll on narrow screens. Friction counters are red only when non-zero.
-- **Panel states**: loading text "reading the X…", empty text states what is empty, failure appends red "api unreachable · last known" while keeping stale data. A stale panel is labelled, never blanked.
+- **QueueLedger / JobsLog / BenchmarkTable**: dense mono tables, uppercase headers over a 2px black rule, hairline row rules, `scope=col` headers, sr-only captions, horizontal scroll on narrow screens. Evidence badges keep their derivation and render as `[ PRIMARY ]`.
+- **Panel states**: loading text "reading the X…", empty text states what is empty, failure shows `[ api unreachable · last known ]` while keeping stale data.
 
 ## Do's and Don'ts
 
 Do:
-- Use red for one meaning: the reading contradicts the record.
+- Use hazard for one meaning: the reading contradicts the register.
+- Keep declared, reserved and observed three separate treatments.
 - Keep stale data on screen when a poll fails and label it.
-- Derive captions from the same data the figure draws.
-- Give every polled panel loading, empty and failure text.
-- Add `aria-label`/caption to every new SVG or table.
+- Derive captions and the warning stripe from the same data the figure draws.
+- Give every polled panel loading, empty and failure text; give every SVG or table a label or caption.
 
 Don't:
-- Add green/red success-error colours, a fifth ink, gradients, shadows, rounded corners or a dark theme.
-- Add a chart library. All charts are hand-rolled SVG.
-- Add any write beyond `PUT /scheduler`.
-- Blend declared/reserved/observed into one bar.
-- Put colour on meaning-free decoration; do not use dots, pills or badges for ornament.
-- Hard-code hex values or font sizes below 11px (9px SVG axis labels excepted).
+- Add a second accent, green/red status colours, gradients, shadows, border-radius, translucency, or the dark CRT mode.
+- Use `text-observed` on text smaller than 24px bold.
+- Add a chart library or any write beyond `PUT /scheduler`.
+- Fill declared with a solid colour or blend the three descriptions into one bar.
+- Invent data: no fake revision strings or counters.
+- Add `font-bold` to Archivo Black.
 
 ## Responsive Behavior
 
-- 375px: single column; header rail, strategy buttons and legend wrap; Fleet one column; Queue and Jobs stack; tables sit in `overflow-x-auto` wrappers; the divergence strip scrolls horizontally at 720px minimum rather than shrinking text to unreadable size.
+- 390px: single column; the masthead scales through `clamp`, the metadata cluster stacks under it, strategy buttons wrap, Fleet is one column, Queue and Jobs stack (`grid-cols-1`), tables sit in `overflow-x-auto` wrappers, and the strip scrolls horizontally at 720px minimum, opening at its live right edge. `body` has `overflow-x: hidden` as a backstop; no page-level horizontal scroll.
 - `sm` 640px: Fleet two columns. `lg` 1024px: Fleet three columns, Queue and Jobs side by side.
-- 1440px: content stays at 1180px, ground ruling fills the viewport.
-- Use `min-h-[100dvh]`, not `h-screen`.
-- Touch targets: strategy buttons and ledger rows are at least 32px and 40px tall.
+- Use `min-h-[100dvh]`, not `h-screen`. Touch targets: strategy buttons 36px, ledger rows 40px.
 
 ## Iteration Guide
 
-1. Change a colour only in `theme.ts` and `tailwind.config.js` together, then re-check contrast (text needs 4.5:1 on #EEF0EA).
-2. New panel: `.plate p-4`, `.legend` h2, `usePoll`, and loading/empty/error text from the Panel states rule.
-3. New number: `font-meter` if it is a headline readout, `font-log stat` if tabular.
-4. New divergence from expectation: use `text-observed`, same size as the happy path.
-5. Motion: only data and the one load-in draw. Gate anything new behind `motion-reduce`; `index.css` already collapses transitions and the pen animation under `prefers-reduced-motion`.
-6. Run `cd frontend && npm run build` and `npm run typecheck`.
+1. Change a colour only in `theme.ts` and `tailwind.config.js` together, then recompute contrast (text 4.5:1, graphics and large type 3:1, on #F2F0EB).
+2. New section: `SectionHead` with the next index numeral, a 2px top rule, `usePoll`, and loading/empty/error text.
+3. New big number: `.display` at 24px or more. New tabular number: `font-mono` with `stat`.
+4. New divergence from expectation: `text-observedText` for text (or `text-observed` if large), same size as the happy path.
+5. Motion: only data and the one load-in draw. Gate anything new behind `motion-reduce`.
+6. Run `cd frontend && npx tsc --noEmit && npm run build`.
 
 ## Known Gaps
 
-- observed #C2410C is 4.51:1, only just AA; do not lighten it, and avoid it below 11px non-bold.
-- No skeleton loaders; first load is a single "connecting" line. Per-panel loading is text only.
+- observed #F54F00 is 3.07:1, only just over the graphics threshold; do not lighten it. It is the 24px+ numeral and the strip lines and hatch; small text uses #B33A00.
+- Hazard hatch and the grey hatch are told apart by angle and colour; a reader with no colour vision still gets the angle, but the pattern is fine at 6px pitch.
+- The Finding's wording refers to "observed trace" and "reserved trace" (formerly "red pen" and "blue trace"), since those colour names no longer apply. Its logic is unchanged.
+- No skeleton loaders; first load is a single "connecting" line.
 - The strip's reading is visual; screen readers get the aria-label and the Finding sentence but not per-sample data.
-- Fonts load from Google Fonts at runtime (no self-hosting, no offline fallback beyond system mono/sans).
-- Header "—" placeholders for empty cells and em dashes in a few sentences remain; acceptable here, as the page is an instrument, not marketing copy.
-- No Playwright/visual regression. Narrow (~485px) and 936px widths were checked by hand in Chrome against a live server on 2026-10-05; there is no automated check.
-- Below 720px the strip scrolls and opens at its live (right) edge, so the worker labels on its left are off-screen until the reader scrolls back. Fleet plates below carry the same worker ids.
-- `ink/8` style opacity values are not used; stay on 10/15/20/30.
+- Fonts load from Google Fonts at runtime; fallbacks are Impact and system mono.
+- Below 720px the strip opens at its live edge, so the worker labels on its left are off-screen until scrolled back. Fleet plates carry the same ids.
+- No automated visual regression; the retheme was verified by build and typecheck only at the time of writing.

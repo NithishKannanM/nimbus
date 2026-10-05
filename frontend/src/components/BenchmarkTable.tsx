@@ -2,6 +2,7 @@ import { useMemo } from "react";
 
 import { usePoll } from "../hooks/usePoll";
 import { api, type BenchmarkProfile, type BenchmarkRunRow } from "../lib/api";
+import { SectionHead } from "./SectionHead";
 
 type EvidenceClass = "primary" | "descriptive" | "inadmissible";
 
@@ -26,9 +27,9 @@ function evidenceClass(runs: BenchmarkRunRow[], hasPressure: boolean): EvidenceC
 }
 
 const BADGE_TONE: Record<EvidenceClass, string> = {
-  primary: "text-ink",
+  primary: "font-bold text-ink",
   descriptive: "text-declared",
-  inadmissible: "text-observed",
+  inadmissible: "font-semibold text-observedText",
 };
 
 const BADGE_TITLE: Record<EvidenceClass, string> = {
@@ -81,16 +82,21 @@ export function BenchmarkTable() {
     .slice(0, 15);
 
   return (
-    <div className="plate p-4">
-      <h2 className="legend mb-3">
+    <section aria-labelledby="runs-h">
+      <SectionHead
+        n="06"
+        id="runs-h"
+        aside={
+          runs.failures > 1 || profiles.failures > 1 ? (
+            <span role="status" className="label font-semibold text-observedText">[ api unreachable · last known ]</span>
+          ) : undefined
+        }
+      >
         Archived runs
-        {(runs.failures > 1 || profiles.failures > 1) && (
-          <span role="status" className="ml-3 text-observed">api unreachable · last known</span>
-        )}
-      </h2>
+      </SectionHead>
 
       {summary.length === 0 ? (
-        <p className="font-log text-[11px] text-declared">
+        <p className="font-mono text-[12px] text-declared">
           {runs.loading ? "reading the archive…" : runs.error ? "api unreachable, archive not loaded" : "no archived runs on disk"}
         </p>
       ) : (
@@ -98,29 +104,29 @@ export function BenchmarkTable() {
         <table className="w-full min-w-[360px]">
           <caption className="sr-only">Evidence class per benchmark profile</caption>
           <thead>
-            <tr className="legend text-left text-declared">
-              <th scope="col" className="pb-1 font-normal">profile</th>
-              <th scope="col" className="pb-1 text-right font-normal">runs</th>
-              <th scope="col" className="pb-1 text-right font-normal">admissible</th>
-              <th scope="col" className="pb-1 text-right font-normal">evidence</th>
+            <tr className="thead-rule">
+              <th scope="col">profile</th>
+              <th scope="col" className="text-right">runs</th>
+              <th scope="col" className="text-right">admissible</th>
+              <th scope="col" className="text-right">evidence</th>
             </tr>
           </thead>
           <tbody>
             {summary.map((row) => (
-              <tr key={row.name} className="border-t border-ink/10">
-                <td className="py-1 pr-2 font-log text-[11px] text-ink">{row.name}</td>
-                <td className="stat py-1 pr-2 text-right font-log text-[11px] text-declared">
+              <tr key={row.name} className="row-rule">
+                <td className="py-1 pr-2 font-mono text-[12px] text-ink">{row.name}</td>
+                <td className="stat py-1 pr-2 text-right font-mono text-[12px] text-declared">
                   {row.total}
                 </td>
-                <td className="stat py-1 pr-2 text-right font-log text-[11px] text-declared">
+                <td className="stat py-1 pr-2 text-right font-mono text-[12px] text-declared">
                   {row.admissible}
                 </td>
                 <td className="py-1 text-right">
                   <span
-                    className={`legend ${BADGE_TONE[row.evidence]}`}
+                    className={`label ${BADGE_TONE[row.evidence]}`}
                     title={BADGE_TITLE[row.evidence]}
                   >
-                    {row.evidence}
+                    [ {row.evidence} ]
                   </span>
                 </td>
               </tr>
@@ -134,34 +140,34 @@ export function BenchmarkTable() {
       <table className="w-full min-w-[480px]">
         <caption className="sr-only">Most recent archived runs</caption>
         <thead>
-          <tr className="legend text-left text-declared">
-            <th scope="col" className="pb-1 font-normal">run</th>
-            <th scope="col" className="pb-1 font-normal">profile</th>
-            <th scope="col" className="pb-1 font-normal">strategy</th>
-            <th scope="col" className="pb-1 text-right font-normal">jobs</th>
-            <th scope="col" className="pb-1 text-right font-normal">makespan</th>
-            <th scope="col" className="pb-1 text-right font-normal">flag</th>
+          <tr className="thead-rule">
+            <th scope="col">run</th>
+            <th scope="col">profile</th>
+            <th scope="col">strategy</th>
+            <th scope="col" className="text-right">jobs</th>
+            <th scope="col" className="text-right">makespan</th>
+            <th scope="col" className="text-right">flag</th>
           </tr>
         </thead>
         <tbody>
           {recent.map((run) => {
             const flag = run.truncated ? "truncated" : !run.load_regime_ok ? "low load" : null;
             return (
-              <tr key={run.run_id} className="border-t border-ink/10">
-                <td className="py-1 pr-2 font-log text-[11px] text-declared">
+              <tr key={run.run_id} className="row-rule">
+                <td className="py-1 pr-2 font-mono text-[12px] text-declared">
                   {run.run_id.replace("exp-", "")}
                 </td>
-                <td className="py-1 pr-2 font-log text-[11px] text-ink">{run.profile}</td>
-                <td className="py-1 pr-2 font-log text-[11px] text-ink">{run.strategy}</td>
-                <td className="stat py-1 pr-2 text-right font-log text-[11px] text-declared">
+                <td className="py-1 pr-2 font-mono text-[12px] text-ink">{run.profile}</td>
+                <td className="py-1 pr-2 font-mono text-[12px] text-ink">{run.strategy}</td>
+                <td className="stat py-1 pr-2 text-right font-mono text-[12px] text-declared">
                   {run.jobs_completed}/{run.jobs_submitted}
                 </td>
-                <td className="stat py-1 pr-2 text-right font-log text-[11px] text-declared">
+                <td className="stat py-1 pr-2 text-right font-mono text-[12px] text-declared">
                   {run.makespan_s === null ? "—" : `${run.makespan_s.toFixed(1)}s`}
                 </td>
                 <td
-                  className={`py-1 text-right font-log text-[11px] ${
-                    flag ? "text-observed" : "text-declared"
+                  className={`py-1 text-right font-mono text-[12px] ${
+                    flag ? "font-semibold text-observedText" : "text-declared"
                   }`}
                 >
                   {flag ?? "—"}
@@ -173,14 +179,14 @@ export function BenchmarkTable() {
       </table>
       </div>
       {recent.length === 0 && (
-        <p className="py-4 text-center font-log text-[11px] text-declared">
+        <p className="py-4 text-center font-mono text-[12px] text-declared">
           {runs.loading ? "reading the archive…" : "no archived runs"}
         </p>
       )}
 
-      <p className="mt-3 font-log text-[11px] text-declared">
+      <p className="mt-3 font-mono text-[12px] text-declared">
         full statistical comparisons: docs/results.md
       </p>
-    </div>
+    </section>
   );
 }

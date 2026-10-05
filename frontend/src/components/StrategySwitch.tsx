@@ -50,33 +50,33 @@ export function StrategySwitch({
     <div
       role="group"
       aria-labelledby="strategy-l"
-      className="mt-3 flex flex-wrap items-center gap-2 border-t border-ink/15 pt-3"
+      className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t-2 border-ink py-3"
     >
-      <span id="strategy-l" className="legend text-declared">strategy</span>
-      {available.map((name) => {
-        const isActive = name === active;
-        const isPending = pending === name;
-        return (
-          <button
-            key={name}
-            type="button"
-            disabled={pending !== null}
-            aria-pressed={isActive}
-            onClick={() => switchTo(name)}
-            title={isActive ? "active" : `switch to ${name}`}
-            className={[
-              "min-h-[32px] border px-3 py-1 font-log text-[11px] transition-colors active:translate-y-px disabled:cursor-wait motion-reduce:transition-none motion-reduce:active:translate-y-0",
-              isActive
-                ? "border-ink bg-ink text-paper"
-                : "border-ink/30 text-ink hover:border-ink/60 hover:bg-ink/5",
-              isPending ? "opacity-60" : "",
-            ].join(" ")}
-          >
-            {isPending ? `switching to ${name}…` : name}
-          </button>
-        );
-      })}
-      <span role="status" aria-live="polite" className="legend text-observed">
+      <span id="strategy-l" className="label text-declared">[ strategy ]</span>
+      <div className="flex flex-wrap">
+        {available.map((name) => {
+          const isActive = name === active;
+          const isPending = pending === name;
+          return (
+            <button
+              key={name}
+              type="button"
+              disabled={pending !== null}
+              aria-pressed={isActive}
+              onClick={() => switchTo(name)}
+              title={isActive ? "active" : `switch to ${name}`}
+              className={[
+                "label -ml-[2px] min-h-[36px] border-2 border-ink px-3 py-1 underline-offset-[6px] decoration-[3px] decoration-observed hover:underline disabled:cursor-wait",
+                isActive ? "bg-ink text-paper" : "bg-paper text-ink",
+                isPending ? "opacity-60" : "",
+              ].join(" ")}
+            >
+              {isPending ? `switching to ${name}…` : name}
+            </button>
+          );
+        })}
+      </div>
+      <span role="status" aria-live="polite" className="label font-semibold text-observedText">
         {error}
       </span>
     </div>

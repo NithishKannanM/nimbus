@@ -8,46 +8,67 @@
   }
 
   body {
-    @apply bg-paper text-ink;
-    font-family: theme("fontFamily.legend");
+    @apply bg-paper text-ink font-mono;
     /* Tabular figures everywhere. A readout whose digits change width is a
        readout that twitches every time the value changes. */
     font-variant-numeric: tabular-nums;
     -webkit-font-smoothing: antialiased;
-  }
-
-  /* Graph-paper ruling, printed on the stock before any pen touches it. Two
-     grids: a fine 8px weave and a heavier 40px division, exactly as engineering
-     paper is milled. */
-  body::before {
-    content: "";
-    position: fixed;
-    inset: 0;
-    pointer-events: none;
-    z-index: 0;
-    background-image:
-      linear-gradient(theme("colors.rule") 1px, transparent 1px),
-      linear-gradient(90deg, theme("colors.rule") 1px, transparent 1px),
-      linear-gradient(theme("colors.rule") 1px, transparent 1px),
-      linear-gradient(90deg, theme("colors.rule") 1px, transparent 1px);
-    background-size: 40px 40px, 40px 40px, 8px 8px, 8px 8px;
-    opacity: 0.34;
+    overflow-x: hidden;
   }
 
   :focus-visible {
-    outline: 2px solid theme("colors.reserved");
+    outline: 3px solid theme("colors.observed");
     outline-offset: 2px;
   }
 }
 
 @layer components {
-  /* A legend plate: the engraved label beside an instrument's dial. */
-  .legend {
-    @apply font-legend text-[11px] font-600 uppercase tracking-legend text-declared;
+  /* Micro label: mono, uppercase, tracked. Metadata and column heads. */
+  .label {
+    @apply font-mono text-[11px] font-medium uppercase tracking-label;
   }
 
-  .plate {
-    @apply relative border border-ink/15 bg-paper/80 backdrop-blur-[1px];
+  /* Macro type: heavy, tight, compressed. Archivo Black ships one weight, so
+     never add font-bold or the browser fakes one. */
+  .display {
+    @apply font-display font-normal uppercase;
+    letter-spacing: -0.04em;
+    line-height: 0.9;
+  }
+
+  .masthead-title {
+    font-size: clamp(3.5rem, 11vw, 9.5rem);
+  }
+
+  .section-title {
+    font-size: clamp(1.6rem, 3.6vw, 2.75rem);
+  }
+
+  /* Dense table head: black rule under it, uppercase labels. */
+  .thead-rule th {
+    @apply label border-b-2 border-ink pb-1 pt-1 font-medium;
+  }
+  :where(.thead-rule th) {
+    text-align: left;
+  }
+
+  .row-rule {
+    @apply border-t border-hairline;
+  }
+
+  /* Paper grain: fixed, inert, nearly invisible. */
+  .grain {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 50;
+    opacity: 0.05;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .grain {
+    display: none;
   }
 }
 

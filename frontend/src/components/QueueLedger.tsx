@@ -1,4 +1,5 @@
 import type { SchedulerState } from "../lib/api";
+import { SectionHead } from "./SectionHead";
 
 function Stat({
   label,
@@ -13,8 +14,8 @@ function Stat({
 }) {
   return (
     <span className="flex items-baseline gap-1.5" title={hint}>
-      <span className={`stat font-meter text-[15px] ${tone}`}>{value}</span>
-      <span className="legend text-declared">{label}</span>
+      <span className={`stat display text-3xl ${tone}`}>{value}</span>
+      <span className="label text-declared">{label}</span>
     </span>
   );
 }
@@ -23,7 +24,7 @@ function Stat({
  * The queue as a snapshot, not a chart.
  *
  * SchedulerState is a point-in-time set of counters, and a snapshot reads best
- * as a snapshot -- the same legend-plate family FleetPlates already uses,
+ * as a snapshot -- the same label-plate family FleetPlates already uses,
  * rather than a client-accumulated time series competing with the divergence
  * strip for the page's one "this changes over time" story.
  *
@@ -38,33 +39,33 @@ export function QueueLedger({ scheduler }: { scheduler: SchedulerState }) {
   const problems = scheduler.failed + scheduler.worker_lost + scheduler.dead_letters;
 
   return (
-    <div className="plate p-4">
-      <h2 className="legend mb-3">Queue</h2>
+    <section aria-labelledby="queue-h">
+      <SectionHead n="04" id="queue-h">Queue</SectionHead>
 
-      <div className="space-y-2.5">
+      <div className="divide-y divide-hairline border-y-2 border-ink [&>div]:py-2.5">
         <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1">
-          <span className="legend w-24 shrink-0 text-declared">in the system</span>
+          <span className="label w-24 shrink-0 text-declared">in the system</span>
           <Stat
             label="visible"
             value={scheduler.queue_visible}
-            tone="text-reserved"
+            tone="text-ink"
             hint="Waiting to be leased."
           />
           <Stat
             label="in flight"
             value={scheduler.queue_in_flight}
-            tone="text-reserved"
+            tone="text-ink"
             hint="Leased or delayed. Owned but not runnable right now."
           />
         </div>
 
         <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1">
-          <span className="legend w-24 shrink-0 text-declared">resolved</span>
+          <span className="label w-24 shrink-0 text-declared">resolved</span>
           <Stat label="completed" value={scheduler.completed} tone="text-ink" />
         </div>
 
         <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1">
-          <span className="legend w-24 shrink-0 text-declared">friction</span>
+          <span className="label w-24 shrink-0 text-declared">friction</span>
           <Stat
             label="retried"
             value={scheduler.retried}
@@ -93,12 +94,12 @@ export function QueueLedger({ scheduler }: { scheduler: SchedulerState }) {
       </div>
 
       {problems > 0 && (
-        <p className="mt-3 border border-observed px-2 py-1 font-log text-[11px] leading-relaxed text-observed">
+        <p className="mt-3 border-2 border-observed px-2 py-1 font-mono text-[12px] leading-relaxed text-observedText">
           {scheduler.failed} failed &middot; {scheduler.worker_lost} reclaimed from lost
           workers &middot; {scheduler.dead_letters} dead-lettered &mdash; a benchmark run
           overlapping this window is not clean evidence.
         </p>
       )}
-    </div>
+    </section>
   );
 }

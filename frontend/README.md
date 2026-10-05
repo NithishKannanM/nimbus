@@ -5,8 +5,8 @@ Phase 6 exit criterion — plus observed telemetry and the archived benchmark
 runs.
 
 React 18 · TypeScript · Vite · Tailwind. Every chart-like element is
-hand-rolled SVG — no charting library — so the traces stay in the same four-ink
-palette as everything else on the page rather than a library's own defaults.
+hand-rolled SVG — no charting library — so the traces stay in the same
+carbon-and-hazard ink as everything else on the page rather than a library's own defaults.
 
 ```bash
 npm install
@@ -24,24 +24,27 @@ every test in this repo runs in.
 
 ## Design
 
-The visual language is deliberate: a plotter-paper ground and a four-pen ink
-palette (`frontend/src/lib/theme.ts`), not a dark developer-tool theme. Red ink
-means the same thing everywhere it appears — a reading that contradicts the
-record — whether that record is a CPU reservation, a stale API poll, or a
-retried job. Nothing on this page uses a bright status green/red; there is one
-warning ink, reused consistently, and the two other inks are neutral.
+The visual language is deliberate: industrial brutalist, Swiss industrial print
+(light). Matte paper, carbon ink, solid black rules, a giant Archivo Black
+masthead over IBM Plex Mono data, and one hazard-orange accent
+(`frontend/src/lib/theme.ts`). The user replaced the earlier plotter-paper look
+with this on 2026-10-05; the ink semantics carried over (graphite became the
+declared grey hatch, blue ballpoint became carbon black, red became hazard).
+Hazard means the same thing everywhere it appears — a reading that contradicts
+the record — whether that record is a CPU reservation, a stale API poll, or a
+retried job. There is no green/red status pair and no second accent.
 
 ## What the design is doing
 
-**The three state categories never share a colour.** Graphite is DECLARED
-(operator configuration), blue is RESERVED (Nimbus bookkeeping), red is
+**The three state categories never share a colour.** Grey hatch is DECLARED
+(operator configuration), solid carbon is RESERVED (Nimbus bookkeeping), hazard is
 OBSERVED (psutil). Those are three different claims about a worker and the
 entire experiment turns on not confusing them, so a single merged "utilisation"
 bar would assert on screen exactly the conflation the project exists to avoid.
 The same three-way split extends to job and queue outcomes: things Nimbus
-currently holds or is doing normally get blue or plain ink; anything that
+currently holds or is doing normally get carbon ink; anything that
 diverged from what was expected — retried, failed, dead-lettered, a tie-break,
-a stale poll — gets the same red, because a divergence from the record is
+a stale poll — gets the same hazard accent, because a divergence from the record is
 exactly what that ink already means.
 
 **The header always says whether placement can *read* telemetry.** The
@@ -85,4 +88,4 @@ scrolling, they may as well not be reported.
   through the Nimbus API (`docs/architecture.md` §10). Nothing in the scheduler
   reads CloudWatch, and neither does this.
 
-Design contract: see `/DESIGN.md` at the repo root. Note `declared` graphite was darkened from #6B7169 to #5E645C so small labels pass WCAG AA (5.3:1 on paper).
+Design contract: see `/DESIGN.md` at the repo root. Contrast ratios on paper are recorded there (hazard #F54F00 3.07:1 for marks and 24px+ type, #B33A00 5.2:1 for small accent text).

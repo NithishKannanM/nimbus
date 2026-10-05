@@ -30,13 +30,26 @@ plan file is deleted. This file is the current state.
   `factory.build_metrics`, and engine emission per docs/architecture.md s10.
 - **Docs:** README, NEXT.md, architecture, aws-batch-baseline, cost-model and
   limitations are all updated, and they say "tested locally, unrun on AWS".
-- **Frontend:**
-  - Repo-root `DESIGN.md` is the design contract (plotter paper; see its Known Gaps).
-  - A taste-skill audit fixed contrast, ARIA, type floor, responsive layout and
-    loading/error states.
-  - Graphite DECLARED ink is now `#5E645C` (was `#6B7169`, under AA contrast).
-    **Not yet confirmed by the user.**
-- **Checked live in Chrome:**
+- **Frontend: new theme, industrial brutalist (Swiss print).** The user
+  replaced plotter paper with it on 2026-10-05, building on the
+  `industrial-brutalist-ui` skill.
+  - Repo-root `DESIGN.md` is the contract: tokens, contrast ratios, Known Gaps.
+  - Palette: matte paper `#F2F0EB` and carbon `#0A0A0A`. Hazard `#F54F00` is
+    the single accent; small accent text uses `#B33A00`. `#FF4F00` failed the
+    3:1 contrast check for graphics.
+  - Type: Archivo Black for headings, IBM Plex Mono for data. No radius,
+    shadows or gradients.
+  - The semantics carried over: DECLARED = grey hatch, RESERVED = solid black,
+    OBSERVED/divergence = hazard. There are no green/red status colours.
+  - The masthead hazard stripe and the Finding's left rule both use the
+    exported `isDiverged()` in `Finding.tsx`.
+  - Checked live in Chrome with sample data: every section at 936px, and phone
+    width inside a 390px iframe (the window manager blocks resizing). There is
+    no horizontal overflow, and the strip opens at its live edge.
+  - Fixed: fleet bars eased over 700 ms against 1 s polls, so they contradicted
+    their own labels. The ease is now 150 ms.
+- **Checked live in Chrome (earlier, under plotter paper; the fixes carried
+  over):**
   - Fixed: the Finding sentence said "agree" while a worker was reserved 100%
     but observed 8%. It now judges the absolute gap.
   - Fixed: the empty fleet grid cell, the jobs-log scrollbar overlap, page
@@ -61,7 +74,9 @@ If the frontend changes, rebuild with `cd frontend && npm run build`.
 3. Check the CloudWatch cost. `docs/cost-model.md` estimates about $9.30/month
    for 31 series, which is over the budget line. Whether AWS prorates hourly is
    unverified.
-4. Confirm the graphite colour change with the user.
+4. The theme is fresh, so get the user's reaction. The masthead metadata
+   stacks in one column and leaves the right half of the masthead empty at
+   desktop width; it may want a 2-column cluster.
 5. Mobile: the strip's worker labels are off-screen at the live edge (DESIGN.md
    Known Gaps).
 
@@ -69,5 +84,9 @@ If the frontend changes, rebuild with `cd frontend && npm run build`.
 
 - The repo is on NTFS. Files can pick up an executable bit from Windows.
   This commit reset 6 such files to 644 in the git index.
-- Taste-skill skills are installed globally in `~/.claude/skills`. Use them as
-  an audit lens only, and don't let them replace the plotter-paper direction.
+- Taste-skill skills are installed globally in `~/.claude/skills`. The user
+  picks the theme; ask before changing direction.
+- Start the server **from the repo root**. `artifact_dir` is relative
+  (`.nimbus/artifacts`), so launching from `frontend/` shows an empty
+  benchmark archive. In a background shell, use
+  `sh -c 'cd <repo> && exec ~/.venvs/nimbus/bin/python -m uvicorn backend.api.app:app'`.

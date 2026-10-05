@@ -17,7 +17,7 @@ export interface Lane {
 }
 
 const PAD_L = 104;
-const PAD_R = 78;
+const PAD_R = 104;
 
 /**
  * Blank stock between one worker's trace and the next.
@@ -64,20 +64,32 @@ function pathFor(values: (number | null)[], width: number, height: number): stri
   return d;
 }
 
+/** Registration crosshair at an axis intersection. */
+function Plus({ x, y: cy }: { x: number; y: number }) {
+  return (
+    <path
+      d={`M${x - 4},${cy}L${x + 4},${cy}M${x},${cy - 4}L${x},${cy + 4}`}
+      stroke={INK.ink}
+      strokeWidth={1.25}
+      fill="none"
+    />
+  );
+}
+
 /**
- * The band between belief and reality, for one worker.
+ * The band between belief and reality, for one worker, as hatching.
  *
  * Split by sign, because the two directions of disagreement mean opposite
- * things and colouring them alike would throw that away:
+ * things and drawing them alike would throw that away:
  *
  *   observed above reserved -- the host is busier than Nimbus knows. This is
  *   the case the whole project is about: external pressure carries no lease, no
  *   slot and no reservation, so the declared/reserved model reports the worker
- *   free. Inked red.
+ *   free. Hazard hatch.
  *
  *   reserved above observed -- Nimbus has committed more than the host is
- *   using. Benign, usually a job that has not spun up yet. Inked in the blue of
- *   the bookkeeping that produced it.
+ *   using. Usually a job that has not spun up yet. Grey hatch, the colour of
+ *   the operator's own expectations.
  */
 function Band({
   lane,
@@ -120,14 +132,20 @@ function Band({
         <clipPath id={`${uid}-below`}>
           <path d={`${reservedLine}L${right.toFixed(1)},${height}L${left.toFixed(1)},${height}Z`} />
         </clipPath>
+        <pattern id={`${uid}-hz`} width={6} height={6} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+          <line x1={0} y1={0} x2={0} y2={6} stroke={INK.observed} strokeWidth={1.6} />
+        </pattern>
+        <pattern id={`${uid}-gr`} width={6} height={6} patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
+          <line x1={0} y1={0} x2={0} y2={6} stroke={INK.declared} strokeWidth={1} />
+        </pattern>
       </defs>
-      <path d={area} fill={INK.observed} opacity={0.18} clipPath={`url(#${uid}-above)`} />
-      <path d={area} fill={INK.reserved} opacity={0.12} clipPath={`url(#${uid}-below)`} />
+      <path d={area} fill={`url(#${uid}-hz)`} clipPath={`url(#${uid}-above)`} />
+      <path d={area} fill={`url(#${uid}-gr)`} clipPath={`url(#${uid}-below)`} />
     </g>
   );
 }
 
-/** The pen head: where the ink is being laid down right now. */
+/** The pen head: a square mark where the line is being laid down right now. */
 function PenHead({ value, x, height, colour }: {
   value: number | null;
   x: number;
@@ -136,15 +154,20 @@ function PenHead({ value, x, height, colour }: {
 }) {
   if (value === null) return null;
   const cy = y(value, height);
-  return (
-    <>
-      <circle cx={x} cy={cy} r={2.6} fill={colour} />
-      <path d={`M${x + 5},${cy - 3.4}L${x + 5},${cy + 3.4}L${x + 1.5},${cy}Z`} fill={colour} />
-    </>
-  );
+  return <rect x={x - 3.5} y={cy - 3.5} width={7} height={7} fill={colour} />;
 }
 
-function WorkerLane({ lane, width, uid }: { lane: Lane; width: number; uid: string }) {
+function WorkerLane({
+  lane,
+  index,
+  width,
+  uid,
+}: {
+  lane: Lane;
+  index: number;
+  width: number;
+  uid: string;
+}) {
   const height = LANE_H - GUTTER;
   const latest = lane.readings[lane.readings.length - 1];
   const { x } = geometry(lane.readings.length, width);
@@ -154,8 +177,7 @@ function WorkerLane({ lane, width, uid }: { lane: Lane; width: number; uid: stri
     <g>
       {/* Scale, drawn and labelled. Every lane is 0-100%, so the lanes are
           directly comparable -- but only if the reader can see that they share
-          a scale. An unlabelled lane invites reading each one as though it were
-          normalised to its own maximum. */}
+          a scale. */}
       {[0, 50, 100].map((v) => (
         <g key={v}>
           <line
@@ -163,25 +185,29 @@ function WorkerLane({ lane, width, uid }: { lane: Lane; width: number; uid: stri
             x2={now}
             y1={y(v, height)}
             y2={y(v, height)}
-            stroke={INK.ink}
-            strokeWidth={v === 0 ? 0.9 : 0.5}
+            stroke={v === 0 ? INK.ink : INK.hairline}
+            strokeWidth={v === 0 ? 1 : 1}
             strokeDasharray={v === 0 ? undefined : "2 4"}
-            opacity={v === 0 ? 0.4 : 0.22}
           />
           {v !== 50 && (
             <text
-              x={PAD_L - 8}
-              y={y(v, height) + (v === 100 ? 7 : -1)}
+              x={PAD_L - 14}
+              y={y(v, height) + (v === 100 ? 8 : 0)}
               textAnchor="end"
-              className="font-log"
-              fontSize={9}
+              className="font-mono"
+              fontSize={10}
+              letterSpacing="0.08em"
               fill={INK.declared}
             >
-              {v}
+              {v}%
             </text>
           )}
         </g>
       ))}
+      <Plus x={PAD_L} y={y(100, height)} />
+      <Plus x={PAD_L} y={y(0, height)} />
+      <Plus x={now} y={y(100, height)} />
+      <Plus x={now} y={y(0, height)} />
 
       <Band lane={lane} width={width} height={height} uid={uid} />
 
@@ -191,8 +217,8 @@ function WorkerLane({ lane, width, uid }: { lane: Lane; width: number; uid: stri
         d={pathFor(lane.readings.map((r) => r.reserved), width, height)}
         fill="none"
         stroke={INK.reserved}
-        strokeWidth={1.5}
-        strokeLinejoin="round"
+        strokeWidth={2.5}
+        strokeLinejoin="miter"
       />
       <path
         className="pen"
@@ -200,8 +226,8 @@ function WorkerLane({ lane, width, uid }: { lane: Lane; width: number; uid: stri
         d={pathFor(lane.readings.map((r) => r.observed), width, height)}
         fill="none"
         stroke={INK.observed}
-        strokeWidth={1.5}
-        strokeLinejoin="round"
+        strokeWidth={2.5}
+        strokeLinejoin="miter"
       />
 
       {lane.readings.length > 0 && (
@@ -211,21 +237,28 @@ function WorkerLane({ lane, width, uid }: { lane: Lane; width: number; uid: stri
         </>
       )}
 
-      <text x={0} y={height / 2 - 4} className="font-log" fontSize={12} fill={INK.ink} opacity={lane.healthy ? 1 : 0.7}>
+      <text x={0} y={12} className="font-display" fontSize={14} fill={INK.declared}>
+        {String(index + 1).padStart(2, "0")}
+      </text>
+      <text x={0} y={height / 2 + 4} className="font-mono" fontSize={12} fontWeight={600} fill={INK.ink}>
         {lane.workerId}
       </text>
-      <text x={0} y={height / 2 + 10} className="font-legend" fontSize={9} fill={INK.declared} letterSpacing="0.12em">
-        {lane.healthy ? "HEALTHY" : "NOT HEALTHY"}
+      <text x={0} y={height / 2 + 20} className="font-mono" fontSize={10} fill={lane.healthy ? INK.declared : INK.observedText} letterSpacing="0.08em">
+        {lane.healthy ? "[ HEALTHY ]" : "[ NOT HEALTHY ]"}
       </text>
 
-      {/* Readout: reality first, then what Nimbus believes — the order the
-          argument runs in. */}
-      <text x={now + 16} y={height / 2 - 3} className="font-meter" fontSize={13} fontWeight={700} fill={INK.observed}>
+      {/* Readout: reality first, then what Nimbus believes -- the order the
+          argument runs in. The big numeral is large bold type, so the hazard
+          fill is allowed at this size. */}
+      <text x={now + 14} y={height / 2 + 6} className="font-display" fontSize={28} fill={INK.observed}>
         {latest?.observed === null || latest?.observed === undefined ? "——" : `${latest.observed.toFixed(0)}%`}
       </text>
-      <text x={now + 16} y={height / 2 + 13} className="font-meter" fontSize={11} fill={INK.reserved}>
-        {latest ? `${latest.reserved.toFixed(0)}%` : "——"}
+      <text x={now + 14} y={height / 2 + 24} className="font-mono" fontSize={11} fontWeight={600} fill={INK.reserved} letterSpacing="0.08em">
+        {latest ? `RES ${latest.reserved.toFixed(0)}%` : "RES ——"}
       </text>
+
+      {/* Lane separator: solid black, in the gutter. */}
+      <line x1={0} x2={width} y1={height + GUTTER / 2 + 4} y2={height + GUTTER / 2 + 4} stroke={INK.ink} strokeWidth={2} />
     </g>
   );
 }
@@ -270,44 +303,27 @@ export function DivergenceStrip({
       <svg
         width="100%"
         style={{ minWidth: 720 }}
-        viewBox={`0 0 ${width} ${height + 10}`}
+        viewBox={`0 0 ${width} ${height + 14}`}
         role="img"
         aria-label={`Reserved capacity against observed host CPU for ${lanes.length} workers over the last ${WINDOW_S} seconds`}
         className="block"
       >
-        {/* Left and right margins of the paper. */}
-        <line
-          x1={PAD_L}
-          x2={PAD_L}
-          y1={0}
-          y2={height - GUTTER}
-          stroke={INK.ink}
-          strokeWidth={0.5}
-          opacity={0.25}
-        />
+        <line x1={PAD_L} x2={PAD_L} y1={0} y2={height - GUTTER} stroke={INK.ink} strokeWidth={1} />
 
         {lanes.map((lane, i) => (
           <g key={lane.workerId} transform={`translate(0,${i * LANE_H})`}>
-            <WorkerLane lane={lane} width={width} uid={`${uid}-${i}`} />
+            <WorkerLane lane={lane} index={i} width={width} uid={`${uid}-${i}`} />
           </g>
         ))}
 
-        {/* The pen carriage. Paper feeds from the right, so now is the right
-            edge and history scrolls away to the left. */}
-        <line
-          x1={now}
-          x2={now}
-          y1={-2}
-          y2={height - GUTTER + 2}
-          stroke={INK.ink}
-          strokeWidth={1}
-          opacity={0.6}
-        />
-        <text x={now} y={height + 2} textAnchor="middle" className="font-legend" fontSize={9} fill={INK.ink} letterSpacing="0.14em">
+        {/* The live edge. Paper feeds from the right, so now is the right edge
+            and history scrolls away to the left. */}
+        <line x1={now} x2={now} y1={-2} y2={height - GUTTER + 2} stroke={INK.ink} strokeWidth={2} />
+        <text x={now} y={height + 6} textAnchor="middle" className="font-mono" fontSize={10} fontWeight={600} fill={INK.ink} letterSpacing="0.08em">
           NOW
         </text>
-        <text x={PAD_L} y={height + 2} className="font-legend" fontSize={9} fill={INK.declared} letterSpacing="0.12em">
-          {WINDOW_S}s OF PAPER · RECORDING SINCE {recordingSince}
+        <text x={PAD_L} y={height + 6} className="font-mono" fontSize={10} fill={INK.declared} letterSpacing="0.08em">
+          {WINDOW_S}S WINDOW /// RECORDING SINCE {recordingSince}
         </text>
       </svg>
     </figure>

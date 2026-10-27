@@ -1,36 +1,54 @@
 import type { ReactNode } from "react";
 
+import { InfoTip } from "./InfoTip";
+
 /**
- * A numbered section title: the index numeral and the name, set in the same
- * heavy face, above a full-width 2px rule. The numeral is an index, not data.
+ * A white dashboard card with a title row. `id` lands on the section so the
+ * sidebar can jump to it; `titleId` labels it for assistive tech.
  */
-export function SectionHead({
-  n,
+export function Card({
   id,
+  title,
+  subtitle,
+  info,
+  action,
   children,
-  aside,
+  className = "",
 }: {
-  n: string;
   id?: string;
+  title: ReactNode;
+  subtitle?: ReactNode;
+  /** Longer explanation, shown from an "i" beside the title. */
+  info?: ReactNode;
+  action?: ReactNode;
   children: ReactNode;
-  aside?: ReactNode;
+  className?: string;
 }) {
+  const titleId = id ? `${id}-title` : undefined;
   return (
-    <div className="mb-4 flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
-      <h2 id={id} className="display section-title flex items-baseline gap-3">
-        <span aria-hidden className="text-declared">{n}</span>
-        <span>{children}</span>
-      </h2>
-      {aside}
-    </div>
+    <section id={id} aria-labelledby={titleId} className={`card scroll-mt-24 p-6 sm:p-[30px] ${className}`}>
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <h2 id={titleId} className="text-[18px] font-semibold leading-tight text-ink">
+              {title}
+            </h2>
+            {info && <InfoTip label={`About ${typeof title === "string" ? title : "this section"}`}>{info}</InfoTip>}
+          </div>
+          {subtitle && <p className="mt-1 text-[14px] text-declared">{subtitle}</p>}
+        </div>
+        {action}
+      </div>
+      {children}
+    </section>
   );
 }
 
-/** Registration crosshair, a structural mark rather than data. */
-export function Cross({ className = "" }: { className?: string }) {
+/** Shown in a card header when its last poll failed but older data remains. */
+export function StaleChip() {
   return (
-    <span aria-hidden className={`label select-none text-ink ${className}`}>
-      +
+    <span role="status" className="chip-observed">
+      API unreachable · last known
     </span>
   );
 }

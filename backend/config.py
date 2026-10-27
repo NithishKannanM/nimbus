@@ -110,7 +110,16 @@ class NimbusConfig(BaseSettings):
     # on EC2 they come from the instance profile and locally from the standard
     # boto3 chain, so there is no path by which a key could reach a config
     # file, a log line or a benchmark manifest (docs/limitations.md section 5).
-    aws_region: str = ""
+    #: Also read from the standard AWS variables. infra/ec2.tf sets AWS_REGION,
+    #: and boto3 itself only falls back to AWS_DEFAULT_REGION, so without these
+    #: aliases a deployed host built every client with no region and the API
+    #: died at startup with NoRegionError.
+    aws_region: str = Field(
+        "",
+        validation_alias=AliasChoices(
+            "NIMBUS_AWS_REGION", "AWS_REGION", "AWS_DEFAULT_REGION"
+        ),
+    )
     sqs_queue_url: str = ""
     sqs_dlq_url: str = ""
     dynamodb_table: str = "nimbus-state"

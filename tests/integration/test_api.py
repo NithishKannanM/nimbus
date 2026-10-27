@@ -151,6 +151,27 @@ def test_decisions_are_exposed_and_explainable(client: TestClient):
     assert decision["decision_latency_us"] > 0
 
 
+def test_comparison_attributes_jobs_to_the_strategy_that_placed_them(client: TestClient):
+    def run_one() -> None:
+        client.post("/jobs", json={"job_type": "json_transform", "payload": {"records": 200}})
+        client.app.state.engine.wait_for_idle(timeout_s=60)
+
+    run_one()
+    client.put("/scheduler", json={"strategy": "adaptive"})
+    run_one()
+    run_one()
+
+    body = client.get("/scheduler/comparison").json()
+    assert body["active"] == "adaptive"
+    rows = {row["strategy"]: row for row in body["strategies"]}
+    assert list(rows) == ["fifo", "adaptive"]
+    assert (rows["fifo"]["placed"], rows["fifo"]["completed"]) == (1, 1)
+    assert (rows["adaptive"]["placed"], rows["adaptive"]["completed"]) == (2, 2)
+    assert rows["adaptive"]["reads_telemetry"] and not rows["fifo"]["reads_telemetry"]
+    assert rows["fifo"]["mean_exec_s"] > 0
+    assert rows["fifo"]["active_s"] >= 0
+
+
 def test_workloads_catalogue_lists_every_type(client: TestClient):
     catalogue = client.get("/workloads").json()
     assert {w["job_type"] for w in catalogue} == set(SMALL_PAYLOADS)

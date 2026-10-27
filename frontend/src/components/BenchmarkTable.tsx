@@ -2,7 +2,7 @@ import { useMemo } from "react";
 
 import { usePoll } from "../hooks/usePoll";
 import { api, type BenchmarkProfile, type BenchmarkRunRow } from "../lib/api";
-import { SectionHead } from "./SectionHead";
+import { Card, StaleChip } from "./SectionHead";
 
 type EvidenceClass = "primary" | "descriptive" | "inadmissible";
 
@@ -27,9 +27,9 @@ function evidenceClass(runs: BenchmarkRunRow[], hasPressure: boolean): EvidenceC
 }
 
 const BADGE_TONE: Record<EvidenceClass, string> = {
-  primary: "font-bold text-ink",
-  descriptive: "text-declared",
-  inadmissible: "font-semibold text-observedText",
+  primary: "chip-reserved",
+  descriptive: "chip-neutral",
+  inadmissible: "chip-observed",
 };
 
 const BADGE_TITLE: Record<EvidenceClass, string> = {
@@ -81,112 +81,99 @@ export function BenchmarkTable() {
     .sort((a, b) => b.started_at.localeCompare(a.started_at))
     .slice(0, 15);
 
+  const stale = runs.failures > 1 || profiles.failures > 1;
+
   return (
-    <section aria-labelledby="runs-h">
-      <SectionHead
-        n="06"
-        id="runs-h"
-        aside={
-          runs.failures > 1 || profiles.failures > 1 ? (
-            <span role="status" className="label font-semibold text-observedText">[ api unreachable · last known ]</span>
-          ) : undefined
-        }
-      >
-        Archived runs
-      </SectionHead>
-
-      {summary.length === 0 ? (
-        <p className="font-mono text-[12px] text-declared">
-          {runs.loading ? "reading the archive…" : runs.error ? "api unreachable, archive not loaded" : "no archived runs on disk"}
-        </p>
-      ) : (
-        <div className="mb-4 overflow-x-auto">
-        <table className="w-full min-w-[360px]">
-          <caption className="sr-only">Evidence class per benchmark profile</caption>
-          <thead>
-            <tr className="thead-rule">
-              <th scope="col">profile</th>
-              <th scope="col" className="text-right">runs</th>
-              <th scope="col" className="text-right">admissible</th>
-              <th scope="col" className="text-right">evidence</th>
-            </tr>
-          </thead>
-          <tbody>
-            {summary.map((row) => (
-              <tr key={row.name} className="row-rule">
-                <td className="py-1 pr-2 font-mono text-[12px] text-ink">{row.name}</td>
-                <td className="stat py-1 pr-2 text-right font-mono text-[12px] text-declared">
-                  {row.total}
-                </td>
-                <td className="stat py-1 pr-2 text-right font-mono text-[12px] text-declared">
-                  {row.admissible}
-                </td>
-                <td className="py-1 text-right">
-                  <span
-                    className={`label ${BADGE_TONE[row.evidence]}`}
-                    title={BADGE_TITLE[row.evidence]}
-                  >
-                    [ {row.evidence} ]
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+    <Card
+      id="runs"
+      title="Archived runs"
+      subtitle="Benchmark runs on disk"
+      info="The controlled comparison: same seeded workload and pressure, repeated runs. Full statistics live in docs/results.md."
+      action={stale ? <StaleChip /> : undefined}
+    >
+      <div className="grid gap-8 2xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+        <div>
+          <h3 className="mb-2 text-[15px] font-semibold text-ink">Evidence by profile</h3>
+          {summary.length === 0 ? (
+            <p className="text-[13px] text-declared">
+              {runs.loading ? "Reading the archive…" : runs.error ? "API unreachable, archive not loaded." : "No archived runs on disk."}
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="data-table min-w-[360px]">
+                <caption className="sr-only">Evidence class per benchmark profile</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Profile</th>
+                    <th scope="col" className="text-right">Runs</th>
+                    <th scope="col" className="text-right">Admissible</th>
+                    <th scope="col" className="text-right">Evidence</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {summary.map((row) => (
+                    <tr key={row.name}>
+                      <td className="font-medium text-ink">{row.name}</td>
+                      <td className="text-right">{row.total}</td>
+                      <td className="text-right">{row.admissible}</td>
+                      <td className="text-right">
+                        <span className={BADGE_TONE[row.evidence]} title={BADGE_TITLE[row.evidence]}>
+                          {row.evidence}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
-      )}
 
-      <div className="overflow-x-auto">
-      <table className="w-full min-w-[480px]">
-        <caption className="sr-only">Most recent archived runs</caption>
-        <thead>
-          <tr className="thead-rule">
-            <th scope="col">run</th>
-            <th scope="col">profile</th>
-            <th scope="col">strategy</th>
-            <th scope="col" className="text-right">jobs</th>
-            <th scope="col" className="text-right">makespan</th>
-            <th scope="col" className="text-right">flag</th>
-          </tr>
-        </thead>
-        <tbody>
-          {recent.map((run) => {
-            const flag = run.truncated ? "truncated" : !run.load_regime_ok ? "low load" : null;
-            return (
-              <tr key={run.run_id} className="row-rule">
-                <td className="py-1 pr-2 font-mono text-[12px] text-declared">
-                  {run.run_id.replace("exp-", "")}
-                </td>
-                <td className="py-1 pr-2 font-mono text-[12px] text-ink">{run.profile}</td>
-                <td className="py-1 pr-2 font-mono text-[12px] text-ink">{run.strategy}</td>
-                <td className="stat py-1 pr-2 text-right font-mono text-[12px] text-declared">
-                  {run.jobs_completed}/{run.jobs_submitted}
-                </td>
-                <td className="stat py-1 pr-2 text-right font-mono text-[12px] text-declared">
-                  {run.makespan_s === null ? "—" : `${run.makespan_s.toFixed(1)}s`}
-                </td>
-                <td
-                  className={`py-1 text-right font-mono text-[12px] ${
-                    flag ? "font-semibold text-observedText" : "text-declared"
-                  }`}
-                >
-                  {flag ?? "—"}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+        <div>
+          <h3 className="mb-2 text-[15px] font-semibold text-ink">Most recent runs</h3>
+          <div className="overflow-x-auto">
+            <table className="data-table min-w-[520px]">
+              <caption className="sr-only">Most recent archived runs</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Run</th>
+                  <th scope="col">Profile</th>
+                  <th scope="col">Strategy</th>
+                  <th scope="col" className="text-right">Jobs</th>
+                  <th scope="col" className="text-right">Makespan</th>
+                  <th scope="col" className="text-right">Flag</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recent.map((run) => {
+                  const flag = run.truncated ? "truncated" : !run.load_regime_ok ? "low load" : null;
+                  return (
+                    <tr key={run.run_id}>
+                      <td className="font-mono text-[12px]">{run.run_id.replace("exp-", "")}</td>
+                      <td className="text-ink">{run.profile}</td>
+                      <td className="text-ink">{run.strategy}</td>
+                      <td className="text-right">
+                        {run.jobs_completed}/{run.jobs_submitted}
+                      </td>
+                      <td className="text-right">
+                        {run.makespan_s === null ? "-" : `${run.makespan_s.toFixed(1)}s`}
+                      </td>
+                      <td className="text-right">
+                        {flag ? <span className="chip-observed">{flag}</span> : "-"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {recent.length === 0 && (
+            <p className="py-4 text-center text-[13px] text-declared">
+              {runs.loading ? "Reading the archive…" : "No archived runs."}
+            </p>
+          )}
+        </div>
       </div>
-      {recent.length === 0 && (
-        <p className="py-4 text-center font-mono text-[12px] text-declared">
-          {runs.loading ? "reading the archive…" : "no archived runs"}
-        </p>
-      )}
-
-      <p className="mt-3 font-mono text-[12px] text-declared">
-        full statistical comparisons: docs/results.md
-      </p>
-    </section>
+    </Card>
   );
 }

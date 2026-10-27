@@ -104,8 +104,9 @@ export interface Decision {
   ordering_policy: string;
   placement_policy: string;
   algorithm_version: string;
+  workload_class: string;
   telemetry_enabled: boolean;
-  weights: Record<string, number>;
+  weights: Record<string, number> | null;
   candidates: Record<string, Candidate>;
   selected_worker: string | null;
   runner_up: string | null;
@@ -136,6 +137,30 @@ export interface SchedulerState {
   dead_letters: number;
   status_counts: Record<JobStatus, number>;
   telemetry_overhead: Record<string, number>;
+}
+
+/** One strategy's live figures, grouped by the strategy that placed each job.
+ *  Uncontrolled: see `backend/services/comparison.py`. */
+export interface StrategyLive {
+  strategy: string;
+  placement_policy: string;
+  reads_telemetry: boolean;
+  active_s: number;
+  placed: number;
+  /** Placements onto a worker whose observed CPU was at or above the
+   *  threshold at decision time. */
+  placed_hot: number;
+  completed: number;
+  completed_per_min: number | null;
+  mean_exec_s: number | null;
+  p95_exec_s: number | null;
+}
+
+export interface Comparison {
+  since: string;
+  hot_cpu_percent: number;
+  active: string | null;
+  strategies: StrategyLive[];
 }
 
 export interface BenchmarkRunRow {
@@ -212,6 +237,7 @@ export const api = {
     get<Job[]>(`/jobs?limit=${limit}`, signal),
   decisions: (limit = 25, signal?: AbortSignal) =>
     get<Decision[]>(`/scheduler/decisions?limit=${limit}`, signal),
+  comparison: (signal?: AbortSignal) => get<Comparison>("/scheduler/comparison", signal),
   telemetryHistory: (workerId: string, limit = 60, signal?: AbortSignal) =>
     get<WorkerTelemetry[]>(
       `/workers/${workerId}/telemetry?limit=${limit}`,

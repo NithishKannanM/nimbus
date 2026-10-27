@@ -3,12 +3,43 @@
 @tailwind utilities;
 
 @layer base {
+  /* Colour tokens as RGB channels. Mirrored in src/lib/theme.ts (LIGHT, DARK). */
+  :root {
+    --c-paper: 255 255 255; /* #FFFFFF */
+    --c-canvas: 255 255 255; /* #FFFFFF */
+    --c-ink: 42 53 71; /* #2A3547 */
+    --c-hairline: 229 234 239; /* #E5EAEF */
+    --c-declared: 90 106 133; /* #5A6A85 */
+    --c-reserved: 93 135 255; /* #5D87FF */
+    --c-reservedLight: 236 242 255; /* #ECF2FF */
+    --c-observed: 232 93 55; /* #E85D37 */
+    --c-observedText: 185 61 24; /* #B93D18 */
+    --c-observedLight: 253 237 232; /* #FDEDE8 */
+    --c-muted: 242 246 250; /* #F2F6FA */
+    --shadow-card: 0 9px 17.5px rgba(0, 0, 0, 0.05);
+  }
+
+  .dark {
+    --c-paper: 42 52 71; /* #2A3447 */
+    --c-canvas: 32 41 54; /* #202936 */
+    --c-ink: 234 239 244; /* #EAEFF4 */
+    --c-hairline: 51 63 85; /* #333F55 */
+    --c-declared: 152 164 184; /* #98A4B8 */
+    --c-reserved: 93 135 255; /* #5D87FF */
+    --c-reservedLight: 37 54 98; /* #253662 */
+    --c-observed: 250 137 107; /* #FA896B */
+    --c-observedText: 250 137 107; /* #FA896B */
+    --c-observedLight: 75 49 61; /* #4B313D */
+    --c-muted: 52 63 84; /* #343F54 */
+    --shadow-card: 0 0 0 1px rgb(51 63 85); /* hairline ring: shadows vanish on dark */
+  }
+
   html {
-    background: theme("colors.paper");
+    background: theme("colors.canvas");
   }
 
   body {
-    @apply bg-paper text-ink font-mono;
+    @apply bg-canvas font-sans text-[14px] text-ink;
     /* Tabular figures everywhere. A readout whose digits change width is a
        readout that twitches every time the value changes. */
     font-variant-numeric: tabular-nums;
@@ -17,79 +48,58 @@
   }
 
   :focus-visible {
-    outline: 3px solid theme("colors.observed");
+    outline: 2px solid theme("colors.reserved");
     outline-offset: 2px;
   }
 }
 
 @layer components {
-  /* Micro label: mono, uppercase, tracked. Metadata and column heads. */
-  .label {
-    @apply font-mono text-[11px] font-medium uppercase tracking-label;
+  .card {
+    @apply rounded-card bg-paper shadow-card;
   }
 
-  /* Macro type: heavy, tight, compressed. Archivo Black ships one weight, so
-     never add font-bold or the browser fakes one. */
-  .display {
-    @apply font-display font-normal uppercase;
-    letter-spacing: -0.04em;
-    line-height: 0.9;
+  /* Small uppercase eyebrow: column heads, nav groups, metadata labels. */
+  .eyebrow {
+    @apply text-[12px] font-semibold uppercase tracking-[0.04em] text-ink;
   }
 
-  .masthead-title {
-    font-size: clamp(3.5rem, 11vw, 9.5rem);
+  /* Pill chip, Modernize style: light tint, strong text. */
+  .chip {
+    @apply inline-flex h-6 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-[12px] font-semibold;
+  }
+  .chip-neutral {
+    @apply chip bg-muted text-declared dark:text-ink;
+  }
+  .chip-reserved {
+    @apply chip bg-reservedLight text-ink;
+  }
+  .chip-observed {
+    @apply chip bg-observedLight text-observedText;
   }
 
-  .section-title {
-    font-size: clamp(1.6rem, 3.6vw, 2.75rem);
+  .data-table {
+    @apply w-full text-left;
   }
-
-  /* Dense table head: black rule under it, uppercase labels. */
-  .thead-rule th {
-    @apply label border-b-2 border-ink pb-1 pt-1 font-medium;
+  .data-table th {
+    @apply whitespace-nowrap border-b border-hairline px-3 py-3 text-[13px] font-semibold text-ink first:pl-0 last:pr-0;
   }
-  :where(.thead-rule th) {
-    text-align: left;
+  .data-table td {
+    @apply whitespace-nowrap border-b border-hairline px-3 py-3 text-[13px] text-declared first:pl-0 last:pr-0;
   }
-
-  .row-rule {
-    @apply border-t border-hairline;
-  }
-
-  /* Paper grain: fixed, inert, nearly invisible. */
-  .grain {
-    position: fixed;
-    inset: 0;
-    pointer-events: none;
-    z-index: 50;
-    opacity: 0.05;
+  .data-table tbody tr:last-child > * {
+    @apply border-b-0;
   }
 }
 
-@media (prefers-reduced-transparency: reduce) {
-  .grain {
-    display: none;
-  }
-}
-
-@layer utilities {
-  .font-600 {
-    font-weight: 600;
-  }
-  .font-700 {
-    font-weight: 700;
-  }
-}
-
-/* The pen laying down ink. One orchestrated moment on load, and nothing else
-   moves except the data itself. */
+/* The lines drawing in. One moment on load, and nothing else moves except the
+   data itself. */
 @keyframes draw {
   to {
     stroke-dashoffset: 0;
   }
 }
 
-@keyframes ink-in {
+@keyframes fade-in {
   from {
     opacity: 0;
   }
@@ -105,7 +115,7 @@
 }
 
 .band {
-  animation: ink-in 700ms 700ms ease-out backwards;
+  animation: fade-in 700ms 700ms ease-out backwards;
 }
 
 @media (prefers-reduced-motion: reduce) {

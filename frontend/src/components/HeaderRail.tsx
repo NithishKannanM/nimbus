@@ -1,113 +1,78 @@
-import type { SchedulerState } from "../lib/api";
-import { INK, stripeUrl } from "../lib/theme";
+import { useThemeMode } from "../lib/themeMode";
+import { IconMenu, IconMoon, IconSun } from "./Icons";
 
-/** A bracketed metadata cell: [ LABEL value ]. */
-function Cell({
-  label,
-  children,
-  title,
-}: {
-  label: string;
-  children: React.ReactNode;
-  title?: string;
-}) {
+/** A status pill with a dot, so on/off reads without relying on colour. */
+function Status({ on, children, title }: { on: boolean; children: string; title: string }) {
   return (
-    <p className="label flex items-baseline gap-2 text-ink" title={title}>
-      <span aria-hidden>[</span>
-      <span className="text-declared">{label}</span>
-      <span className="normal-case tracking-normal">{children}</span>
-      <span aria-hidden>]</span>
-    </p>
-  );
-}
-
-/**
- * A square lamp: filled when the condition holds, hollow when it does not,
- * so it reads without relying on colour alone.
- */
-function Lamp({ on, children, title }: { on: boolean; children: string; title: string }) {
-  return (
-    <span className="label flex items-center gap-2" title={title}>
+    <span className={on ? "chip-reserved" : "chip-neutral"} title={title}>
       <span
         aria-hidden
-        className={`inline-block h-2.5 w-2.5 border-2 ${
-          on ? "border-observed bg-observed" : "border-declared bg-transparent"
-        }`}
+        className={`h-2 w-2 rounded-full ${on ? "bg-reserved" : "border-2 border-declared"}`}
       />
-      <span className={on ? "text-ink" : "text-declared"}>{children}</span>
+      {children}
     </span>
   );
 }
 
+/** Sticky top bar: menu toggle on small screens, live status on the right. */
 export function HeaderRail({
-  scheduler,
+  telemetryOn,
   readsTelemetry,
   stale,
-  workerCount,
-  diverged,
+  onMenu,
 }: {
-  scheduler: SchedulerState;
+  telemetryOn: boolean;
   readsTelemetry: boolean;
   stale: boolean;
-  workerCount: number;
-  /** Derived from the same lanes the Finding reads. */
-  diverged: boolean;
+  onMenu: () => void;
 }) {
+  const { mode, toggle } = useThemeMode();
+  const dark = mode === "dark";
   return (
-    <header>
-      <div className="flex flex-wrap items-end justify-between gap-x-10 gap-y-4 pb-4">
-        <h1 className="display masthead-title -ml-[0.04em]">Nimbus</h1>
-
-        <div className="flex min-w-0 flex-col gap-1.5 sm:max-w-[34rem]">
-          {/* The strategy written as the composition it actually is. Ordering
-              and placement are separate objects, and every implemented strategy
-              holds ordering constant, so a difference between two of them is
-              attributable to placement alone. */}
-          <Cell label="strategy">
-            {scheduler.strategy}
-            <span className="text-declared"> = </span>
-            {scheduler.ordering_policy}
-            <span className="text-declared"> + </span>
-            {scheduler.placement_policy}
-          </Cell>
-          <Cell label="policy version">{scheduler.algorithm_version}</Cell>
-          <Cell label="workers">{workerCount}</Cell>
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-1.5 pt-1">
-            <Lamp
-              on={scheduler.telemetry_enabled}
-              title="Whether the collector is sampling the hosts at all."
-            >
-              {scheduler.telemetry_enabled ? "[ telemetry collecting ]" : "[ telemetry off ]"}
-            </Lamp>
-            <Lamp
-              on={readsTelemetry}
-              title={
-                readsTelemetry
-                  ? "This policy receives a view carrying observed state, and its score depends on it."
-                  : "This policy receives a view with no telemetry fields on it at all. The observed trace below is recorded, and cannot reach the placement decision."
-              }
-            >
-              {readsTelemetry ? "[ placement reads it ]" : "[ placement cannot read it ]"}
-            </Lamp>
-          </div>
+    <header className="sticky top-0 z-20 bg-canvas/95 backdrop-blur">
+      <div className="flex h-[70px] items-center justify-between gap-4">
+        <button
+          type="button"
+          onClick={onMenu}
+          aria-label="Open menu"
+          className="rounded-full p-2 text-ink hover:bg-reservedLight lg:hidden"
+        >
+          <IconMenu />
+        </button>
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
           {stale && (
-            <span
-              role="status"
-              className="label w-fit border-2 border-observed px-1.5 py-0.5 font-semibold text-observedText"
-            >
-              [ api unreachable · last known ]
+            <span role="status" className="chip-observed">
+              API unreachable · last known
             </span>
           )}
+          <Status
+            on={telemetryOn}
+            title="Whether the collector is sampling the hosts at all."
+          >
+            {telemetryOn ? "Telemetry collecting" : "Telemetry off"}
+          </Status>
+          <Status
+            on={readsTelemetry}
+            title={
+              readsTelemetry
+                ? "This policy receives a view carrying observed state, and its score depends on it."
+                : "This policy receives a view with no telemetry fields on it at all. The observed trace is recorded, and cannot reach the placement decision."
+            }
+          >
+            {readsTelemetry ? "Placement reads it" : "Placement can't read it"}
+          </Status>
+          <button
+            type="button"
+            onClick={toggle}
+            aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
+            aria-pressed={dark}
+            title={dark ? "Light mode" : "Dark mode"}
+            className="ml-1 grid h-9 w-9 place-items-center rounded-full text-declared transition-colors hover:bg-reservedLight hover:text-reserved"
+          >
+            {dark ? <IconSun /> : <IconMoon />}
+          </button>
         </div>
       </div>
-
-      {diverged && (
-        <div
-          aria-hidden
-          className="h-4 border-y-2 border-ink"
-          style={{ backgroundImage: stripeUrl(INK.observed) }}
-        />
-      )}
     </header>
   );
 }

@@ -10,14 +10,10 @@ import { api, ApiError } from "../lib/api";
  * which placement policy runs next -- no job, no worker, no queue state. That
  * makes it safe to expose directly, and it is also the single most legible way
  * to show how Nimbus works: flip `fifo` to `adaptive` while a worker is under
- * pressure and watch the divergence strip's finding sentence and the decision
- * ledger change without touching anything else.
+ * pressure and watch the finding sentence and the decision ledger change
+ * without touching anything else.
  *
- * Kept as its own component rather than folded into HeaderRail. HeaderRail is
- * pure display -- no state, no callbacks -- and every other panel on this page
- * keeps that same read-only contract. A control that owns a pending/error
- * state machine around a write is a different kind of thing, and shouldn't
- * quietly turn the one honestly-read-only component into a stateful one.
+ * Kept as its own component so every display panel stays read-only.
  */
 export function StrategySwitch({
   available,
@@ -39,7 +35,7 @@ export function StrategySwitch({
       await api.setStrategy(name);
       onSwitched();
     } catch (err) {
-      setError(err instanceof ApiError ? `could not switch: ${err.status}` : "could not switch");
+      setError(err instanceof ApiError ? `Could not switch: ${err.status}` : "Could not switch");
       setTimeout(() => setError(null), 4000);
     } finally {
       setPending(null);
@@ -47,13 +43,11 @@ export function StrategySwitch({
   }
 
   return (
-    <div
-      role="group"
-      aria-labelledby="strategy-l"
-      className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t-2 border-ink py-3"
-    >
-      <span id="strategy-l" className="label text-declared">[ strategy ]</span>
-      <div className="flex flex-wrap">
+    <div role="group" aria-labelledby="strategy-l" className="flex flex-col items-start gap-2 sm:items-end">
+      <span id="strategy-l" className="sr-only">
+        Scheduling strategy
+      </span>
+      <div className="flex flex-wrap gap-1 rounded-card bg-muted p-1">
         {available.map((name) => {
           const isActive = name === active;
           const isPending = pending === name;
@@ -64,19 +58,21 @@ export function StrategySwitch({
               disabled={pending !== null}
               aria-pressed={isActive}
               onClick={() => switchTo(name)}
-              title={isActive ? "active" : `switch to ${name}`}
+              title={isActive ? "Active" : `Switch to ${name}`}
               className={[
-                "label -ml-[2px] min-h-[36px] border-2 border-ink px-3 py-1 underline-offset-[6px] decoration-[3px] decoration-observed hover:underline disabled:cursor-wait",
-                isActive ? "bg-ink text-paper" : "bg-paper text-ink",
+                "min-h-[36px] rounded-[5px] px-3.5 text-[13px] font-medium transition-colors disabled:cursor-wait",
+                isActive
+                  ? "bg-reserved text-white shadow-sm"
+                  : "text-declared hover:bg-paper hover:text-ink",
                 isPending ? "opacity-60" : "",
               ].join(" ")}
             >
-              {isPending ? `switching to ${name}…` : name}
+              {isPending ? `Switching…` : name}
             </button>
           );
         })}
       </div>
-      <span role="status" aria-live="polite" className="label font-semibold text-observedText">
+      <span role="status" aria-live="polite" className="text-[12px] font-semibold text-observedText">
         {error}
       </span>
     </div>

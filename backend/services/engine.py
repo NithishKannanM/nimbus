@@ -26,6 +26,7 @@ from backend.models.decision import SchedulingDecision
 from backend.models.enums import TERMINAL_STATUSES, JobEvent, JobStatus, WorkerStatus
 from backend.models.job import IllegalTransition, Job, utcnow
 from backend.models.worker import FleetSnapshot
+from backend.services.comparison import StrategySegment, compare_strategies
 from backend.services.factory import (
     build_artifacts,
     build_metrics,
@@ -111,6 +112,12 @@ class NimbusEngine:
             is_alive=lambda worker_id: worker_id not in self._failed_workers,
         )
         self._telemetry_enabled = cfg.telemetry_enabled
+        #: When each strategy was active, for the live comparison
+        #: (backend/services/comparison.py). Process-local and unbounded in
+        #: count only by how often someone clicks the switch.
+        self._segments: list[StrategySegment] = [
+            StrategySegment(self.scheduler.name, self.scheduler.placement.name, utcnow())
+        ]
 
         self.backoff = BackoffPolicy(
             base_s=cfg.retry_base_s,
@@ -751,6 +758,18 @@ class NimbusEngine:
     def decisions(self, *, job_id: str | None = None, limit: int = 50) -> list[SchedulingDecision]:
         return self.store.list_decisions(job_id=job_id, limit=limit)
 
+    def comparison(self) -> dict[str, Any]:
+        """Per-strategy live figures since this control plane started.
+        Uncontrolled by construction; see backend/services/comparison.py."""
+        with self._lock:
+            segments = list(self._segments)
+        return compare_strategies(
+            self.store.list_decisions(limit=5000),
+            self.store.list_jobs(status=JobStatus.COMPLETED, limit=5000),
+            segments,
+            utcnow(),
+        )
+
     def wait_for_idle(self, timeout_s: float = 60.0, poll_s: float = 0.02) -> bool:
         """Block until the queue is drained and no worker is busy.
 
@@ -936,5 +955,10 @@ class NimbusEngine:
         )
         with self._lock:
             self.scheduler = scheduler
+            now = utcnow()
+            self._segments[-1].ended_at = now
+            self._segments.append(
+                StrategySegment(scheduler.name, scheduler.placement.name, now)
+            )
         log.info("strategy switched to %s", name)
         return scheduler.name

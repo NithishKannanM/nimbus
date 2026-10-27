@@ -43,6 +43,16 @@ def set_scheduler(req: StrategyRequest, engine: NimbusEngine = Depends(get_engin
     }
 
 
+@router.get("/comparison")
+def get_comparison(engine: NimbusEngine = Depends(get_engine)) -> dict[str, Any]:
+    """Live per-strategy figures, grouped by the strategy that placed each job.
+
+    A demonstration, not evidence: strategies ran at different times under
+    different load. The benchmark archive is the controlled comparison.
+    """
+    return engine.comparison()
+
+
 @router.get("/decisions", response_model=list[SchedulingDecision])
 def list_decisions(
     job_id: str | None = None,

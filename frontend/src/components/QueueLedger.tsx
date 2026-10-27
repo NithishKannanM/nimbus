@@ -1,105 +1,93 @@
 import type { SchedulerState } from "../lib/api";
-import { SectionHead } from "./SectionHead";
+import { InfoTip } from "./InfoTip";
+import { Card } from "./SectionHead";
 
-function Stat({
+function Row({
   label,
   value,
-  tone,
   hint,
+  divergent = false,
 }: {
   label: string;
   value: number;
-  tone: string;
   hint?: string;
+  divergent?: boolean;
 }) {
   return (
-    <span className="flex items-baseline gap-1.5" title={hint}>
-      <span className={`stat display text-3xl ${tone}`}>{value}</span>
-      <span className="label text-declared">{label}</span>
-    </span>
+    <li className="flex items-center justify-between gap-3 py-3">
+      <span className="flex items-center gap-2 text-[14px] text-ink">
+        {label}
+        {hint && <InfoTip label={`About ${label}`}>{hint}</InfoTip>}
+      </span>
+      <span
+        className={`text-[16px] font-semibold ${divergent ? "text-observedText" : "text-ink"}`}
+      >
+        {value}
+      </span>
+    </li>
   );
 }
 
 /**
  * The queue as a snapshot, not a chart.
  *
- * SchedulerState is a point-in-time set of counters, and a snapshot reads best
- * as a snapshot -- the same label-plate family FleetPlates already uses,
- * rather than a client-accumulated time series competing with the divergence
- * strip for the page's one "this changes over time" story.
- *
- * Friction counters (retried, failed, dead-lettered, no-candidate,
- * dispatch-rejected) are ink'd exactly like every other divergence from the
- * expected path elsewhere on this page: red, at the same size as the happy
- * path, never smaller or hidden. Three Phase 3 runs once silently completed 59
- * of 60 jobs and looked completely ordinary; a friction counter that is easy
- * to overlook is worse than useless.
+ * Friction counters (retried, failed, dead-lettered, no-candidate) take the
+ * accent exactly like every other divergence from the expected path on this
+ * page, at the same size as the happy path, never smaller or hidden. Three
+ * Phase 3 runs once silently completed 59 of 60 jobs and looked completely
+ * ordinary; a friction counter that is easy to overlook is worse than useless.
  */
 export function QueueLedger({ scheduler }: { scheduler: SchedulerState }) {
   const problems = scheduler.failed + scheduler.worker_lost + scheduler.dead_letters;
 
   return (
-    <section aria-labelledby="queue-h">
-      <SectionHead n="04" id="queue-h">Queue</SectionHead>
+    <Card id="queue" title="Queue" subtitle="Point-in-time counters" className="h-full">
+      <p className="eyebrow text-declared">In the system</p>
+      <ul className="mb-3 divide-y divide-hairline">
+        <Row label="Visible" value={scheduler.queue_visible} hint="Waiting to be leased." />
+        <Row
+          label="In flight"
+          value={scheduler.queue_in_flight}
+          hint="Leased or delayed. Owned but not runnable right now."
+        />
+        <Row label="Completed" value={scheduler.completed} />
+      </ul>
 
-      <div className="divide-y divide-hairline border-y-2 border-ink [&>div]:py-2.5">
-        <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1">
-          <span className="label w-24 shrink-0 text-declared">in the system</span>
-          <Stat
-            label="visible"
-            value={scheduler.queue_visible}
-            tone="text-ink"
-            hint="Waiting to be leased."
-          />
-          <Stat
-            label="in flight"
-            value={scheduler.queue_in_flight}
-            tone="text-ink"
-            hint="Leased or delayed. Owned but not runnable right now."
-          />
-        </div>
-
-        <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1">
-          <span className="label w-24 shrink-0 text-declared">resolved</span>
-          <Stat label="completed" value={scheduler.completed} tone="text-ink" />
-        </div>
-
-        <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1">
-          <span className="label w-24 shrink-0 text-declared">friction</span>
-          <Stat
-            label="retried"
-            value={scheduler.retried}
-            tone={scheduler.retried ? "text-observed" : "text-ink"}
-            hint="Attempts that failed and were re-placed. Not an error on its own."
-          />
-          <Stat
-            label="failed"
-            value={scheduler.failed}
-            tone={scheduler.failed ? "text-observed" : "text-ink"}
-            hint="Terminal: the retry budget was exhausted, or the message was dead-lettered."
-          />
-          <Stat
-            label="dead-lettered"
-            value={scheduler.dead_letters}
-            tone={scheduler.dead_letters ? "text-observed" : "text-ink"}
-            hint="The queue gave up delivering. Any measurement taken during this window is suspect."
-          />
-          <Stat
-            label="no candidate"
-            value={scheduler.no_candidate}
-            tone={scheduler.no_candidate ? "text-observed" : "text-ink"}
-            hint="No eligible worker at decision time."
-          />
-        </div>
-      </div>
+      <p className="eyebrow text-declared">Friction</p>
+      <ul className="divide-y divide-hairline">
+        <Row
+          label="Retried"
+          value={scheduler.retried}
+          divergent={scheduler.retried > 0}
+          hint="Attempts that failed and were re-placed. Not an error on its own."
+        />
+        <Row
+          label="Failed"
+          value={scheduler.failed}
+          divergent={scheduler.failed > 0}
+          hint="Terminal: the retry budget was exhausted, or the message was dead-lettered."
+        />
+        <Row
+          label="Dead-lettered"
+          value={scheduler.dead_letters}
+          divergent={scheduler.dead_letters > 0}
+          hint="The queue gave up delivering. Any measurement taken during this window is suspect."
+        />
+        <Row
+          label="No candidate"
+          value={scheduler.no_candidate}
+          divergent={scheduler.no_candidate > 0}
+          hint="No eligible worker at decision time."
+        />
+      </ul>
 
       {problems > 0 && (
-        <p className="mt-3 border-2 border-observed px-2 py-1 font-mono text-[12px] leading-relaxed text-observedText">
+        <p className="mt-4 rounded-card bg-observedLight px-4 py-3 text-[13px] leading-relaxed text-observedText">
           {scheduler.failed} failed &middot; {scheduler.worker_lost} reclaimed from lost
-          workers &middot; {scheduler.dead_letters} dead-lettered &mdash; a benchmark run
+          workers &middot; {scheduler.dead_letters} dead-lettered. A benchmark run
           overlapping this window is not clean evidence.
         </p>
       )}
-    </section>
+    </Card>
   );
 }

@@ -8,19 +8,19 @@
 # IAM role rather than by namespace.
 set -euxo pipefail
 
-dnf install -y python3.12 python3.12-pip git amazon-cloudwatch-agent
+dnf install -y python3.12 python3.12-pip git awscli-2 amazon-cloudwatch-agent
 
 install -d -o ec2-user -g ec2-user /opt/nimbus
-cd /opt/nimbus
 
-# The repository is expected to be delivered here by the deploy script
-# (scripts/demo/deploy.sh rsyncs it) rather than cloned, so a deployment always
-# matches the working tree that produced it. A git clone would introduce a
-# window in which the deployed code and the local code disagree, and every
-# benchmark manifest records a git sha on the assumption they do not.
-if [ ! -f /opt/nimbus/requirements.txt ]; then
-  echo "waiting for application payload at /opt/nimbus" >&2
-fi
+# The application arrives from S3, not by SSH: deploy.sh uploads the working
+# tree as release/nimbus.tar.gz and the unit's ExecStartPre unpacks it (see
+# infra/user_data/fetch_release.sh). Shipping the working tree rather than a git
+# clone keeps the deployed code identical to the tree that produced it, which
+# every benchmark manifest assumes.
+cat > /usr/local/bin/nimbus-fetch-release <<'FETCHEOF'
+${fetch_script}
+FETCHEOF
+chmod 0755 /usr/local/bin/nimbus-fetch-release
 
 cat > /etc/nimbus.env <<'ENVEOF'
 %{ for key, value in env ~}
@@ -35,12 +35,15 @@ cat > /etc/systemd/system/nimbus-api.service <<'UNITEOF'
 Description=Nimbus control plane (API + scheduler)
 After=network-online.target
 Wants=network-online.target
+# Never stop retrying: a fresh instance waits here until deploy.sh uploads.
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
 User=ec2-user
 WorkingDirectory=/opt/nimbus
 EnvironmentFile=/etc/nimbus.env
+ExecStartPre=+/usr/local/bin/nimbus-fetch-release
 ExecStartPre=/usr/bin/python3.12 -m pip install --user -r requirements.txt -r requirements-aws.txt
 ExecStart=/usr/bin/python3.12 -m uvicorn backend.api.app:app --host 0.0.0.0 --port 8000
 Restart=always

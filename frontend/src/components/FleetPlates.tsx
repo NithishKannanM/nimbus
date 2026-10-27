@@ -1,16 +1,23 @@
 import type { WorkerState } from "../lib/api";
-import { INK, hatchUrl } from "../lib/theme";
-import { SectionHead } from "./SectionHead";
+import { hatchUrl } from "../lib/theme";
+import { useInk } from "../lib/themeMode";
+import { IconServer } from "./Icons";
+import { Card } from "./SectionHead";
 
 type Kind = "declared" | "reserved" | "observed";
 
 /** The bar track and fill for each description. Three different treatments,
  *  not three colours of one bar: declared is an outline with hatch (never a
- *  solid fill), reserved is solid carbon, observed is solid hazard. */
+ *  solid fill), reserved is solid blue, observed is solid coral. */
 const TRACK: Record<Kind, string> = {
-  declared: "border-2 border-declared",
-  reserved: "border-2 border-ink",
-  observed: "border-2 border-observed",
+  declared: "border border-declared",
+  reserved: "bg-muted",
+  observed: "bg-muted",
+};
+const LABEL: Record<Kind, string> = {
+  declared: "Declared",
+  reserved: "Reserved",
+  observed: "Observed",
 };
 const LABEL_TONE: Record<Kind, string> = {
   declared: "text-declared",
@@ -40,12 +47,13 @@ function Row({
   pct: number | null;
   hatched?: boolean;
 }) {
+  const INK = useInk();
   const clamped = pct === null ? null : Math.min(100, Math.max(0, pct));
   return (
     <div className="grid grid-cols-[72px_1fr_auto] items-center gap-3">
-      <span className={`label ${LABEL_TONE[kind]}`}>{kind}</span>
+      <span className={`text-[13px] font-medium ${LABEL_TONE[kind]}`}>{LABEL[kind]}</span>
       <span
-        className={`block h-3 ${TRACK[kind]}`}
+        className={`block h-2 overflow-hidden rounded-full ${TRACK[kind]}`}
         style={hatched ? { backgroundImage: hatchUrl(INK.declared, 6, 1) } : undefined}
         role={pct !== null ? "meter" : undefined}
         aria-label={pct !== null ? `${kind} ${Math.round(pct)} percent` : undefined}
@@ -55,14 +63,14 @@ function Row({
       >
         {clamped !== null && (
           <span
-            className={`block h-full transition-[width] duration-150 motion-reduce:transition-none ${
-              kind === "observed" ? "bg-observed" : "bg-ink"
+            className={`block h-full rounded-full transition-[width] duration-150 motion-reduce:transition-none ${
+              kind === "observed" ? "bg-observed" : "bg-reserved"
             }`}
             style={{ width: `${clamped}%` }}
           />
         )}
       </span>
-      <span className="font-mono text-[12px] text-ink" title={detail}>
+      <span className="text-right font-mono text-[12px] text-declared" title={detail}>
         {value}
       </span>
     </div>
@@ -71,12 +79,14 @@ function Row({
 
 export function FleetPlates({ workers }: { workers: WorkerState[] }) {
   return (
-    <section aria-labelledby="fleet-h">
-      <SectionHead n="02" id="fleet-h">Fleet</SectionHead>
-      {/* Plate dividers are borders, not a black gap: with 3 workers on a
-          2-column row, a gap-px background would show through the empty cell. */}
-      <div className="grid border-l-2 border-t-2 border-ink sm:grid-cols-2 lg:grid-cols-3">
-        {workers.map((worker, i) => {
+    <Card
+      id="fleet"
+      title="Fleet"
+      subtitle="Declared, reserved and observed"
+      info="Each worker described three ways: what the operator declared (hatched outline), what Nimbus has reserved (blue), and what the host is actually doing (coral)."
+    >
+      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        {workers.map((worker) => {
           const observed = worker.observed;
           const reservedPct =
             worker.declared.cpu_units > 0
@@ -84,43 +94,41 @@ export function FleetPlates({ workers }: { workers: WorkerState[] }) {
               : 0;
           const healthy = worker.status === "HEALTHY";
           return (
-            <article key={worker.worker_id} className="border-b-2 border-r-2 border-ink bg-paper p-4">
-              <header className="mb-3 flex items-baseline justify-between gap-3 border-b border-ink pb-2">
-                <span className="flex items-baseline gap-2">
-                  <span aria-hidden className="display text-xl text-declared">
-                    {String(i + 1).padStart(2, "0")}
+            <article key={worker.worker_id} className="rounded-card border border-hairline p-5">
+              <header className="mb-4 flex items-center justify-between gap-3">
+                <span className="flex items-center gap-3">
+                  <span className="grid h-10 w-10 place-items-center rounded-full bg-reservedLight text-reserved">
+                    <IconServer />
                   </span>
-                  <span className="font-mono text-[13px] font-semibold text-ink">{worker.worker_id}</span>
+                  <span className="text-[15px] font-semibold text-ink">{worker.worker_id}</span>
                 </span>
-                <span
-                  className={`label ${healthy ? "text-declared" : "font-semibold text-observedText"}`}
-                >
-                  [ {worker.status} ]
+                <span className={healthy ? "chip-neutral" : "chip-observed"}>
+                  {healthy ? "Healthy" : worker.status.toLowerCase()}
                 </span>
               </header>
 
-              <div className="mb-3 flex items-end justify-between gap-3">
-                <span className="label text-declared">observed cpu</span>
+              <div className="mb-4">
                 <span
-                  className={`display text-5xl ${observed ? "text-observed" : "text-declared"}`}
+                  className={`text-[28px] font-bold leading-none ${observed ? "text-observed" : "text-declared"}`}
                   aria-label={observed ? `observed ${observed.cpu_percent.toFixed(0)} percent` : "no observed sample"}
                 >
-                  {observed ? `${observed.cpu_percent.toFixed(0)}%` : "——"}
+                  {observed ? `${observed.cpu_percent.toFixed(0)}%` : "-"}
                 </span>
+                <span className="ml-2 text-[13px] text-declared">observed CPU</span>
               </div>
 
-              <div className="space-y-2.5">
+              <div className="space-y-3">
                 <Row
                   kind="declared"
                   pct={null}
                   hatched
-                  value={`${worker.declared.cpu_units} u · ${worker.declared.slots} slots`}
+                  value={`${worker.declared.cpu_units}u · ${worker.declared.slots} slots`}
                   detail="Operator configuration. Static, and never inferred from telemetry."
                 />
                 <Row
                   kind="reserved"
                   pct={reservedPct}
-                  value={`${worker.reserved.cpu_units} u · ${worker.reserved.active_jobs}/${worker.declared.slots}`}
+                  value={`${worker.reserved.cpu_units}u · ${worker.reserved.active_jobs}/${worker.declared.slots}`}
                   detail="What Nimbus has committed. Its own bookkeeping, and the only capacity signal a static policy gets."
                 />
                 <Row
@@ -131,8 +139,8 @@ export function FleetPlates({ workers }: { workers: WorkerState[] }) {
                 />
               </div>
 
-              <footer className="label mt-3 border-t border-hairline pt-2 normal-case tracking-normal text-declared">
-                heartbeat {worker.heartbeat_age_s.toFixed(1)}s
+              <footer className="mt-4 border-t border-hairline pt-3 text-[12px] text-declared">
+                Heartbeat {worker.heartbeat_age_s.toFixed(1)}s
                 {worker.telemetry_age_s !== null &&
                   ` · sample ${worker.telemetry_age_s.toFixed(1)}s`}
               </footer>
@@ -140,6 +148,6 @@ export function FleetPlates({ workers }: { workers: WorkerState[] }) {
           );
         })}
       </div>
-    </section>
+    </Card>
   );
 }

@@ -6,7 +6,7 @@ runs.
 
 React 18 · TypeScript · Vite · Tailwind. Every chart-like element is
 hand-rolled SVG — no charting library — so the traces stay in the same
-carbon-and-hazard ink as everything else on the page rather than a library's own defaults.
+blue-and-coral palette as everything else on the page rather than a library's own defaults.
 
 ```bash
 npm install
@@ -24,30 +24,32 @@ every test in this repo runs in.
 
 ## Design
 
-The visual language is deliberate: industrial brutalist, Swiss industrial print
-(light). Matte paper, carbon ink, solid black rules, a giant Archivo Black
-masthead over IBM Plex Mono data, and one hazard-orange accent
-(`frontend/src/lib/theme.ts`). The user replaced the earlier plotter-paper look
-with this on 2026-10-05; the ink semantics carried over (graphite became the
-declared grey hatch, blue ballpoint became carbon black, red became hazard).
-Hazard means the same thing everywhere it appears — a reading that contradicts
-the record — whether that record is a CPU reservation, a stale API poll, or a
-retried job. There is no green/red status pair and no second accent.
+The layout follows the Modernize admin template (MUI free edition) without
+pulling in MUI: a 270px white sidebar with grouped section links, a sticky top
+bar with status pills, a summary-tile row, then white cards with a soft shadow
+and 7px corners. Plus Jakarta Sans for UI, IBM Plex Mono for IDs
+(`frontend/src/lib/theme.ts`). The user moved to this on 2026-10-12 after the
+industrial brutalist look (and the plotter-paper look before it) read as a toy
+project. The colour semantics carried over: declared is a slate hatch, reserved
+is primary blue, observed is coral. Coral means the same thing everywhere it
+appears — a reading that contradicts the record — whether that record is a CPU
+reservation, a stale API poll, or a retried job. There is no green/red status
+pair and no second accent.
 
 ## What the design is doing
 
-**The three state categories never share a colour.** Grey hatch is DECLARED
-(operator configuration), solid carbon is RESERVED (Nimbus bookkeeping), hazard is
+**The three state categories never share a colour.** Slate hatch is DECLARED
+(operator configuration), solid blue is RESERVED (Nimbus bookkeeping), coral is
 OBSERVED (psutil). Those are three different claims about a worker and the
 entire experiment turns on not confusing them, so a single merged "utilisation"
 bar would assert on screen exactly the conflation the project exists to avoid.
 The same three-way split extends to job and queue outcomes: things Nimbus
-currently holds or is doing normally get carbon ink; anything that
+currently holds get a blue chip, finished work a neutral one; anything that
 diverged from what was expected — retried, failed, dead-lettered, a tie-break,
-a stale poll — gets the same hazard accent, because a divergence from the record is
-exactly what that ink already means.
+a stale poll — gets the same coral accent, because a divergence from the record is
+exactly what that colour already means.
 
-**The header always says whether placement can *read* telemetry.** The
+**The top bar always says whether placement can *read* telemetry.** The
 dashboard shows observed CPU whichever strategy is active, because the trace
 records it either way. Without that badge, an operator watching a
 `static_resource_aware` run would see the scheduler dispatch to a worker sitting
@@ -88,4 +90,4 @@ scrolling, they may as well not be reported.
   through the Nimbus API (`docs/architecture.md` §10). Nothing in the scheduler
   reads CloudWatch, and neither does this.
 
-Design contract: see `/DESIGN.md` at the repo root. Contrast ratios on paper are recorded there (hazard #F54F00 3.07:1 for marks and 24px+ type, #B33A00 5.2:1 for small accent text).
+Design contract: see `/DESIGN.md` at the repo root. Contrast ratios on white are recorded there (coral #E85D37 3.5:1 for marks and large type, #B93D18 5.6:1 for small accent text).

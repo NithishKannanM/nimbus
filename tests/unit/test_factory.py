@@ -108,6 +108,16 @@ def test_a_missing_dlq_is_reported_because_it_stalls_silently():
 # --------------------------------------------------------------------------- #
 # the architectural invariant
 # --------------------------------------------------------------------------- #
+@pytest.mark.parametrize("var", ["NIMBUS_AWS_REGION", "AWS_REGION", "AWS_DEFAULT_REGION"])
+def test_the_region_is_read_from_the_standard_aws_variables(monkeypatch, var: str):
+    # infra/ec2.tf sets AWS_REGION. Before this alias existed a deployed host
+    # built every boto3 client with no region and died with NoRegionError.
+    for name in ("NIMBUS_AWS_REGION", "AWS_REGION", "AWS_DEFAULT_REGION"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv(var, "ap-southeast-2")
+    assert NimbusConfig().aws_region == "ap-southeast-2"
+
+
 def test_only_the_factory_branches_on_the_backend():
     """One place, and this test is what keeps it one place.
 

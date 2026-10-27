@@ -156,8 +156,25 @@ curl -s -X POST localhost:8000/admin/workers/worker-1/recover
 ```bash
 pip install -r requirements-aws.txt
 export TF_VAR_admin_cidr="$(curl -s https://checkip.amazonaws.com)/32"
-scripts/demo/deploy.sh          # ~$0.08/hour
+aws configure                   # credentials for the account to deploy into
+scripts/demo/deploy.sh          # ~$0.08/hour; re-run it to ship code changes
 scripts/demo/teardown.sh        # pulls archives down first, then destroys
+```
+
+`deploy.sh` runs `terraform apply`, packages the working tree (with the built
+dashboard, without Terraform state or `.env` files) to
+`s3://<bucket>/release/nimbus.tar.gz`, and waits until every worker is healthy.
+Each instance pulls that release from S3 before every start of its Nimbus unit
+(`infra/user_data/fetch_release.sh`): workers have no public ingress, so S3 is
+the only route code can take to them. No SSH key is needed; inspect instances
+with `aws ssm start-session`. Ship code-only changes with `deploy.sh --code-only`.
+
+Live simulation on the deployed stack (job stream plus CPU pressure on
+worker-1's EC2 host via SSM, which Nimbus did not place):
+
+```bash
+AWS_PROFILE=<profile> scripts/demo/simulate.sh                 # until Ctrl+C
+AWS_PROFILE=<profile> scripts/demo/simulate.sh --duration 600  # 10 minutes
 ```
 
 To drive remote workers from a control plane you started yourself, run

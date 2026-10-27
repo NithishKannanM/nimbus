@@ -1,13 +1,12 @@
 import { useState } from "react";
 
 import type { Candidate, Decision } from "../lib/api";
-import { SectionHead } from "./SectionHead";
+import { IconChevron } from "./Icons";
+import { Card, StaleChip } from "./SectionHead";
 
-/** The square mark DivergenceStrip draws at "now" on each lane, reused here:
- *  the strip marks where the trace is right now, this marks which worker the
- *  placement landed on. */
+/** Marks which worker the placement landed on. */
 function PenMark() {
-  return <span aria-hidden className="inline-block h-2 w-2 shrink-0 bg-current" />;
+  return <span aria-hidden className="inline-block h-2 w-2 shrink-0 rounded-full bg-reserved" />;
 }
 
 function CandidateRow({
@@ -21,18 +20,14 @@ function CandidateRow({
 }) {
   const observedCpu = candidate.observed?.cpu_percent ?? null;
   return (
-    <tr className={`row-rule ${candidate.eligible ? "" : "opacity-60"}`}>
-      <td className="py-1 pr-3 font-mono text-[12px] text-ink">
-        <span className="flex items-center gap-1.5">
-          {selected && (
-            <span className="text-observed">
-              <PenMark />
-            </span>
-          )}
+    <tr className={candidate.eligible ? "" : "opacity-60"}>
+      <td className="font-medium text-ink">
+        <span className="flex items-center gap-2">
+          {selected ? <PenMark /> : <span aria-hidden className="inline-block w-2" />}
           {workerId}
         </span>
       </td>
-      <td className="py-1 pr-3 font-mono text-[12px]">
+      <td className="font-mono text-[12px]">
         {candidate.eligible ? (
           <span className="text-ink">yes</span>
         ) : (
@@ -41,10 +36,10 @@ function CandidateRow({
           </span>
         )}
       </td>
-      <td className="stat py-1 pr-3 text-right font-mono text-[12px] text-declared">
+      <td className="text-right font-mono text-[12px] text-declared">
         {candidate.declared_cpu_units}u &middot; {candidate.declared_slots}s
       </td>
-      <td className="stat py-1 pr-3 text-right font-mono text-[12px] text-ink font-semibold">
+      <td className="text-right font-mono text-[12px] text-ink font-semibold">
         {candidate.reserved_cpu_units}u &middot; {candidate.active_jobs}/{candidate.declared_slots}
       </td>
       {/* Always rendered, whether or not this policy could read it. A static
@@ -54,14 +49,14 @@ function CandidateRow({
           would let a reader assume the data was never collected, rather than
           never consulted. */}
       <td
-        className={`stat py-1 pr-3 text-right font-mono text-[12px] ${
+        className={`text-right font-mono text-[12px] ${
           observedCpu === null ? "text-declared" : "font-semibold text-observedText"
         }`}
       >
-        {observedCpu === null ? "—" : `${observedCpu.toFixed(0)}%`}
+        {observedCpu === null ? "-" : `${observedCpu.toFixed(0)}%`}
       </td>
-      <td className="stat py-1 text-right font-mono text-[12px] text-ink">
-        {candidate.score === null ? "—" : candidate.score.toFixed(4)}
+      <td className="text-right font-mono text-[12px] text-ink">
+        {candidate.score === null ? "-" : candidate.score.toFixed(4)}
       </td>
     </tr>
   );
@@ -89,35 +84,32 @@ export function DecisionTrace({
   error?: boolean;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
+  const [showAll, setShowAll] = useState(false);
+  const PREVIEW = 8;
 
   if (decisions.length === 0) {
     return (
-      <section aria-labelledby="ledger-h">
-        <SectionHead n="03" id="ledger-h">Decision ledger</SectionHead>
-        <p className="font-mono text-[12px] text-declared">
-          {error ? "api unreachable, no placements loaded yet" : loading ? "reading the ledger…" : "no placements yet"}
+      <Card id="decisions" title="Decision ledger" className="h-full">
+        <p className="text-[13px] text-declared">
+          {error ? "API unreachable, no placements loaded yet." : loading ? "Reading the ledger…" : "No placements yet."}
         </p>
-      </section>
+      </Card>
     );
   }
 
-  return (
-    <section aria-labelledby="ledger-h">
-      <SectionHead
-        n="03"
-        id="ledger-h"
-        aside={
-          <p className="label text-declared">
-            {error ? <span className="font-semibold text-observedText">[ api unreachable · last known ] </span> : null}
-            observed is recorded even when placement cannot read it
-          </p>
-        }
-      >
-        Decision ledger
-      </SectionHead>
+  const shown = showAll ? decisions : decisions.slice(0, PREVIEW);
 
-      <div className="divide-y divide-hairline border-y-2 border-ink">
-        {decisions.map((decision) => {
+  return (
+    <Card
+      id="decisions"
+      title="Decision ledger"
+      subtitle="Select a row for its candidates"
+      info="Every placement with the full state of each worker at that moment. Observed load is recorded even when the active placement cannot read it, which is how you can see a static policy pick a worker at 100% CPU."
+      action={error ? <StaleChip /> : undefined}
+      className="h-full"
+    >
+      <div className="-mx-2 divide-y divide-hairline">
+        {shown.map((decision) => {
           const open = openId === decision.decision_id;
           return (
             <div key={decision.decision_id}>
@@ -125,52 +117,47 @@ export function DecisionTrace({
                 type="button"
                 onClick={() => setOpenId(open ? null : decision.decision_id)}
                 aria-expanded={open}
-                className="flex min-h-[40px] w-full items-center justify-between gap-3 py-2 text-left hover:underline decoration-[3px] decoration-observed underline-offset-4"
+                className="flex min-h-[48px] w-full items-center justify-between gap-3 rounded-card px-2 py-2 text-left transition-colors hover:bg-muted"
               >
-                <span className="flex min-w-0 items-baseline gap-3">
-                  <span className="font-mono text-[12px] text-ink">
+                <span className="flex min-w-0 items-center gap-3">
+                  <IconChevron
+                    className={`h-4 w-4 shrink-0 text-declared transition-transform ${open ? "rotate-180" : "-rotate-90"}`}
+                  />
+                  <span className="font-mono text-[13px] text-ink">
                     {decision.job_id.replace("job-", "")}
                   </span>
-                  <span className="label truncate text-declared">
+                  <span className="chip-neutral hidden sm:inline-flex">
                     {decision.placement_policy}
                   </span>
                 </span>
-                <span className="flex shrink-0 items-baseline gap-4">
+                <span className="flex shrink-0 items-center gap-3">
+                  {decision.margin === 0 && <span className="chip-observed">tie-break</span>}
                   {decision.selected_worker ? (
-                    <span className="font-mono text-[12px] text-ink">
+                    <span className="text-[13px] font-medium text-ink">
                       {decision.selected_worker}
                     </span>
                   ) : (
-                    <span className="label font-semibold text-observedText">[ no candidate ]</span>
+                    <span className="chip-observed">no candidate</span>
                   )}
-                  {decision.margin === 0 && (
-                    <span className="label font-semibold text-observedText">[ tie-break ]</span>
-                  )}
-                  <span className="stat font-mono text-[12px] text-declared">
+                  <span className="w-12 text-right font-mono text-[12px] text-declared">
                     {decision.decision_latency_us.toFixed(0)}&micro;s
                   </span>
                 </span>
               </button>
 
               {open && (
-                <div className="border-t-2 border-ink pb-3 pl-1">
+                <div className="mb-3 ml-9 mr-2 rounded-card bg-muted/60 p-4">
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[460px]">
+                    <table className="data-table min-w-[460px]">
                       <caption className="sr-only">Candidates considered for {decision.job_id}</caption>
                       <thead>
-                        <tr className="thead-rule">
-                          <th className="font-normal">worker</th>
-                          <th className="font-normal">eligible</th>
-                          <th className="text-right text-declared">
-                            declared
-                          </th>
-                          <th className="text-right">
-                            reserved
-                          </th>
-                          <th className="text-right text-observedText">
-                            observed
-                          </th>
-                          <th className="text-right">score</th>
+                        <tr>
+                          <th scope="col">Worker</th>
+                          <th scope="col">Eligible</th>
+                          <th scope="col" className="text-right">Declared</th>
+                          <th scope="col" className="text-right">Reserved</th>
+                          <th scope="col" className="text-right">Observed</th>
+                          <th scope="col" className="text-right">Score</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -188,11 +175,9 @@ export function DecisionTrace({
                     </table>
                   </div>
 
-                  <p className="mt-2 border-l-4 border-ink pl-3 font-mono text-[12px] leading-relaxed text-ink">
-                    {decision.reason}
-                  </p>
+                  <p className="mt-3 text-[13px] leading-relaxed text-ink">{decision.reason}</p>
 
-                  {Object.keys(decision.weights).length > 0 && (
+                  {decision.weights && Object.keys(decision.weights).length > 0 && (
                     <p className="mt-1.5 font-mono text-[12px] text-declared">
                       weights:{" "}
                       {Object.entries(decision.weights)
@@ -206,6 +191,16 @@ export function DecisionTrace({
           );
         })}
       </div>
-    </section>
+
+      {decisions.length > PREVIEW && (
+        <button
+          type="button"
+          onClick={() => setShowAll((v) => !v)}
+          className="mt-4 rounded-card px-3 py-2 text-[13px] font-semibold text-reserved hover:bg-reservedLight"
+        >
+          {showAll ? "Show fewer" : `View all ${decisions.length}`}
+        </button>
+      )}
+    </Card>
   );
 }

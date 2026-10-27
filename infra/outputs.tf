@@ -12,6 +12,11 @@ output "worker_private_ips" {
   value       = aws_instance.worker[*].private_ip
 }
 
+output "instance_ids" {
+  description = "Every Nimbus instance, so deploy.sh can restart them over SSM after uploading a release."
+  value       = concat([aws_instance.control_plane.id], aws_instance.worker[*].id)
+}
+
 output "worker_ids" {
   description = "Matches the local fleet's ids, so traces are comparable across backends."
   value       = [for i in aws_instance.worker : i.tags["WorkerId"]]

@@ -1,41 +1,34 @@
 /** @type {import('tailwindcss').Config} */
 export default {
+  darkMode: "class",
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   theme: {
-    // Square corners are a rule, so every radius step resolves to zero.
-    borderRadius: {
-      none: "0",
-      sm: "0",
-      DEFAULT: "0",
-      md: "0",
-      lg: "0",
-      xl: "0",
-      "2xl": "0",
-      "3xl": "0",
-      full: "0",
-    },
     extend: {
-      // Mirrors src/lib/theme.ts. Kept as literals because Tailwind reads this
-      // file through its own loader, and a .ts import here is a fragile way to
-      // save a few lines.
+      // Each colour is a CSS variable set in index.css (:root for light, .dark
+      // for dark) and mirrored in src/lib/theme.ts for SVG. Channels, not hex,
+      // so opacity modifiers like bg-canvas/95 keep working.
       colors: {
-        paper: "#F2F0EB",
-        ink: "#0A0A0A",
-        rule: "#0A0A0A",
-        hairline: "#C9C5BB",
-        declared: "#5F5C56",
-        reserved: "#0A0A0A",
-        observed: "#F54F00",
-        observedText: "#B33A00",
+        paper: "rgb(var(--c-paper) / <alpha-value>)",
+        canvas: "rgb(var(--c-canvas) / <alpha-value>)",
+        ink: "rgb(var(--c-ink) / <alpha-value>)",
+        hairline: "rgb(var(--c-hairline) / <alpha-value>)",
+        declared: "rgb(var(--c-declared) / <alpha-value>)",
+        reserved: "rgb(var(--c-reserved) / <alpha-value>)",
+        reservedLight: "rgb(var(--c-reservedLight) / <alpha-value>)",
+        observed: "rgb(var(--c-observed) / <alpha-value>)",
+        observedText: "rgb(var(--c-observedText) / <alpha-value>)",
+        observedLight: "rgb(var(--c-observedLight) / <alpha-value>)",
+        muted: "rgb(var(--c-muted) / <alpha-value>)",
       },
       fontFamily: {
-        // Macro type: structural headers and the big numerals.
-        display: ['"Archivo Black"', "Impact", "sans-serif"],
-        // Micro type: every label, datum and table.
+        sans: ['"Plus Jakarta Sans"', "system-ui", "sans-serif"],
         mono: ['"IBM Plex Mono"', "ui-monospace", "monospace"],
       },
-      letterSpacing: {
-        label: "0.08em",
+      borderRadius: {
+        card: "7px",
+      },
+      boxShadow: {
+        card: "var(--shadow-card)",
       },
     },
   },

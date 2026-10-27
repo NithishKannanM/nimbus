@@ -49,10 +49,15 @@ locals {
     ])
   })
 
+  # Installed on every instance as /usr/local/bin/nimbus-fetch-release and run
+  # before each start of the Nimbus unit: pulls the release deploy.sh uploaded.
+  fetch_release_script = file("${path.module}/user_data/fetch_release.sh")
+
   control_plane_user_data = templatefile("${path.module}/user_data/control_plane.sh.tftpl", {
-    env       = local.control_plane_env
-    log_group = aws_cloudwatch_log_group.control_plane.name
-    region    = var.region
+    env          = local.control_plane_env
+    fetch_script = local.fetch_release_script
+    log_group    = aws_cloudwatch_log_group.control_plane.name
+    region       = var.region
     # Admin endpoints are destructive by design and the API is unauthenticated
     # before Phase 7. They stay off on a deployed host; the failure tests run
     # them locally.
@@ -67,8 +72,9 @@ locals {
         NIMBUS_WORKER_ID         = "worker-${i + 1}"
         NIMBUS_CONTROL_PLANE_URL = "http://${local.control_plane_ip}:8000"
       })
-      log_group = aws_cloudwatch_log_group.worker.name
-      region    = var.region
+      log_group    = aws_cloudwatch_log_group.worker.name
+      region       = var.region
+      fetch_script = local.fetch_release_script
     })
   ]
 }

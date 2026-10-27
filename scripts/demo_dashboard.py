@@ -19,6 +19,12 @@ Run alongside the server, not instead of it:
 Ctrl+C stops the job stream and the external stressor. It does not stop the
 server.
 
+Against the AWS deployment, the stressor has to run on worker-1's own EC2 host,
+not on this laptop. ``--ssm-pressure`` does that through SSM Run Command: a
+plain CPU hog on the worker host that Nimbus never placed and holds no
+reservation for, which is exactly the "noisy neighbour" the experiment is
+about. scripts/demo/simulate.sh wires it up from the Terraform outputs.
+
 Nothing here calls the benchmark runner or writes into
 .nimbus/artifacts/benchmarks/ -- that archive is the project's real
 experimental evidence (docs/results.md is generated from it), and a demo run
@@ -107,6 +113,93 @@ def _cores_for(worker_index: int, worker_count: int) -> tuple[int, ...]:
     return tuple(chunk)
 
 
+class SsmCpuPressure:
+    """External CPU pressure on a worker's EC2 host, via SSM Run Command.
+
+    Same interface as benchmark.pressure.ExternalPressure (describe, stop), so
+    the demo loop does not care where the pressure runs. One busy loop per
+    vCPU, so a t3.small worker reads ~100%. Every loop is wrapped in
+    ``timeout``, so the host stops it by itself even if this script dies
+    without cleaning up; stop() ends it early.
+
+    Cost note: the t3 instances run in the default "unlimited" credit mode, so
+    a pinned worker accrues surplus-credit charges (roughly $0.08/hour for a
+    t3.small) on top of the instance price while the pressure runs.
+    """
+
+    MARK = "nimbus-demo-pressure"
+
+    def __init__(self, worker_id: str, *, max_seconds: int, region: str | None = None) -> None:
+        import boto3  # noqa: PLC0415  (AWS-only dependency, requirements-aws.txt)
+
+        session = boto3.Session(region_name=region)
+        self.region = session.region_name
+        self._ssm = session.client("ssm")
+        self.worker_id = worker_id
+        self.max_seconds = max_seconds
+        self._stopped = False
+
+        reservations = session.client("ec2").describe_instances(
+            Filters=[
+                {"Name": "tag:Project", "Values": ["nimbus"]},
+                {"Name": "tag:WorkerId", "Values": [worker_id]},
+                {"Name": "instance-state-name", "Values": ["running"]},
+            ]
+        )["Reservations"]
+        instances = [i["InstanceId"] for r in reservations for i in r["Instances"]]
+        if len(instances) != 1:
+            raise SystemExit(
+                f"expected one running instance tagged WorkerId={worker_id} in "
+                f"{self.region}, found {instances or 'none'}. Is the stack deployed, "
+                "and is AWS_PROFILE pointing at that account?"
+            )
+        self.instance_id = instances[0]
+        self._run(
+            f"pkill -f {self.MARK} || true",
+            f"for i in $(seq $(nproc)); do setsid nohup timeout {max_seconds} "
+            f"bash -c ': {self.MARK}; while :; do :; done' >/dev/null 2>&1 & done",
+            "sleep 1",
+            f"echo running $(pgrep -f 'bash -c : {self.MARK}' | wc -l) busy loops",
+        )
+
+    def _run(self, *commands: str) -> str:
+        command_id = self._ssm.send_command(
+            InstanceIds=[self.instance_id],
+            DocumentName="AWS-RunShellScript",
+            Comment="nimbus demo: external CPU pressure",
+            Parameters={"commands": list(commands)},
+        )["Command"]["CommandId"]
+        for _ in range(30):
+            time.sleep(1.0)
+            try:
+                result = self._ssm.get_command_invocation(
+                    CommandId=command_id, InstanceId=self.instance_id
+                )
+            except self._ssm.exceptions.InvocationDoesNotExist:
+                continue
+            if result["Status"] in ("Success", "Failed", "Cancelled", "TimedOut"):
+                if result["Status"] != "Success":
+                    raise RuntimeError(f"SSM command {result['Status']}: {result['StandardErrorContent']}")
+                return result["StandardOutputContent"].strip()
+        raise RuntimeError("SSM command did not finish within 30s")
+
+    def describe(self) -> str:
+        return (
+            f"CPU hog on {self.worker_id}'s EC2 host ({self.instance_id}, {self.region}) "
+            f"via SSM, every vCPU, auto-stops after {self.max_seconds}s"
+        )
+
+    def stop(self, timeout: float = 3.0) -> None:  # noqa: ARG002  (interface parity)
+        if self._stopped:
+            return
+        self._stopped = True
+        try:
+            self._run(f"pkill -f {self.MARK} || true")
+            print(f"stopped the CPU hog on {self.worker_id} ({self.instance_id})")
+        except Exception as exc:  # noqa: BLE001  (best effort; the host timeout still applies)
+            print(f"could not stop the CPU hog over SSM ({exc}); it ends by itself within {self.max_seconds}s")
+
+
 def _wait_for_api(client: httpx.Client, retries: int = 30) -> None:
     for attempt in range(retries):
         try:
@@ -132,6 +225,12 @@ def main() -> int:
     parser.add_argument("--rate", type=float, default=1.2, help="jobs submitted per second")
     parser.add_argument("--duration", type=float, default=None, help="seconds; omit to run until Ctrl+C")
     parser.add_argument("--seed", type=int, default=1337)
+    parser.add_argument(
+        "--ssm-pressure",
+        action="store_true",
+        help="apply the CPU pressure on the target worker's EC2 host via SSM (AWS deployment)",
+    )
+    parser.add_argument("--aws-region", default=None, help="defaults to the AWS profile's region")
     args = parser.parse_args()
 
     rng = random.Random(args.seed)
@@ -145,12 +244,17 @@ def main() -> int:
 
     slots = max((w["declared"]["slots"] for w in workers), default=2)
     worker_count = len(worker_ids)
-    target_index = worker_ids.index(args.target_worker)
-    cores = _cores_for(target_index, worker_count)
 
-    stressor: ExternalPressure = start_cpu_pressure(
-        args.target_worker, cores, intensity=args.intensity
-    )
+    stressor: ExternalPressure | SsmCpuPressure
+    if args.ssm_pressure:
+        # The host-side timeout outlives a fixed-length run by a minute; an
+        # open-ended run is capped at an hour and can simply be restarted.
+        cap = int(args.duration) + 60 if args.duration else 3600
+        stressor = SsmCpuPressure(args.target_worker, max_seconds=cap, region=args.aws_region)
+    else:
+        target_index = worker_ids.index(args.target_worker)
+        cores = _cores_for(target_index, worker_count)
+        stressor = start_cpu_pressure(args.target_worker, cores, intensity=args.intensity)
     print(f"pressure: {stressor.describe()}")
 
     def _stop(*_args: object) -> None:
@@ -182,29 +286,37 @@ def main() -> int:
         except httpx.HTTPError as exc:
             print(f"submit failed: {exc}")
 
-        if submitted % 10 == 0:
-            state = client.get("/scheduler").json()
-            backlog = state["queue_visible"] + state["queue_in_flight"]
-            if backlog > backlog_ceiling:
-                time.sleep(2.0)
+        # Status reads are best effort. Over the internet to an AWS deployment a
+        # single slow response is normal, and it must not end a long demo; a
+        # dead API shows up as repeated "unreachable" lines instead.
+        try:
+            if submitted % 10 == 0:
+                state = client.get("/scheduler").json()
+                backlog = state["queue_visible"] + state["queue_in_flight"]
+                if backlog > backlog_ceiling:
+                    time.sleep(2.0)
 
-        now = time.monotonic()
-        if now - last_status > 4.0:
-            last_status = now
-            state = client.get("/scheduler").json()
-            target = next(
-                (w for w in client.get("/workers").json() if w["worker_id"] == args.target_worker),
-                None,
-            )
-            observed = (target or {}).get("observed") or {}
-            cpu = observed.get("cpu_percent")
-            print(
-                f"submitted={submitted:4d}  "
-                f"queue={state['queue_visible']}+{state['queue_in_flight']}  "
-                f"completed={state['completed']}  "
-                f"{args.target_worker} observed_cpu="
-                f"{'n/a' if cpu is None else f'{cpu:.0f}%'}"
-            )
+            now = time.monotonic()
+            if now - last_status > 4.0:
+                last_status = now
+                state = client.get("/scheduler").json()
+                target = next(
+                    (w for w in client.get("/workers").json() if w["worker_id"] == args.target_worker),
+                    None,
+                )
+                observed = (target or {}).get("observed") or {}
+                cpu = observed.get("cpu_percent")
+                print(
+                    f"submitted={submitted:4d}  "
+                    f"queue={state['queue_visible']}+{state['queue_in_flight']}  "
+                    f"completed={state['completed']}  "
+                    f"{args.target_worker} observed_cpu="
+                    f"{'n/a' if cpu is None else f'{cpu:.0f}%'}",
+                    flush=True,
+                )
+        except httpx.HTTPError as exc:
+            print(f"API unreachable ({type(exc).__name__}); still trying", flush=True)
+            time.sleep(5.0)
 
         time.sleep(interval)
 

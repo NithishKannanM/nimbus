@@ -8,10 +8,20 @@
 # by the worker's own restraint.
 set -euxo pipefail
 
-dnf install -y python3.12 python3.12-pip amazon-cloudwatch-agent
+dnf install -y python3.12 python3.12-pip awscli-2 amazon-cloudwatch-agent
 
 install -d -o ec2-user -g ec2-user /opt/nimbus /var/lib/nimbus/scratch
 chown ec2-user:ec2-user /var/lib/nimbus/scratch
+
+# The application arrives from S3, not by SSH: deploy.sh uploads the working
+# tree as release/nimbus.tar.gz and the unit's ExecStartPre unpacks it (see
+# infra/user_data/fetch_release.sh). Shipping the working tree rather than a git
+# clone keeps the deployed code identical to the tree that produced it, which
+# every benchmark manifest assumes.
+cat > /usr/local/bin/nimbus-fetch-release <<'FETCHEOF'
+${fetch_script}
+FETCHEOF
+chmod 0755 /usr/local/bin/nimbus-fetch-release
 
 cat > /etc/nimbus.env <<'ENVEOF'
 %{ for key, value in env ~}
@@ -27,6 +37,8 @@ cat > /etc/systemd/system/nimbus-worker.service <<'UNITEOF'
 Description=Nimbus worker agent
 After=network-online.target
 Wants=network-online.target
+# Never stop retrying: a fresh instance waits here until deploy.sh uploads.
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
@@ -41,6 +53,7 @@ Environment=OMP_NUM_THREADS=1
 Environment=OPENBLAS_NUM_THREADS=1
 Environment=MKL_NUM_THREADS=1
 Environment=NUMEXPR_NUM_THREADS=1
+ExecStartPre=+/usr/local/bin/nimbus-fetch-release
 ExecStartPre=/usr/bin/python3.12 -m pip install --user -r requirements.txt -r requirements-aws.txt
 ExecStart=/usr/bin/python3.12 -m uvicorn worker.api:app --host 0.0.0.0 --port 8080
 Restart=always

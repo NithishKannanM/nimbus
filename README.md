@@ -23,7 +23,8 @@ being read from `AWS_REGION`. Both are fixed and covered.
 
 What is **still not established**: Phase 5's formal criterion, *the same test
 suite green against `NIMBUS_BACKEND=aws`*, has not been run, and **every
-benchmark number below comes from local runs**, not EC2
+benchmark number below comes from local runs, except the one uncontrolled
+AWS EC2 live-demo row**
 (`docs/limitations.md` section 3). Phase 8 still publishes [no AWS Batch
 numbers](docs/aws-batch-baseline.md).
 
@@ -268,11 +269,12 @@ uvicorn backend.api.app:app --host 0.0.0.0 --port 8000
 The endpoint ids become the registered worker ids; `/internal/results` is
 mounted whenever the backend is `aws` or the transport is `http`. The worker API
 has no authentication beyond the network (security group) in front of it, and
-this path has never run on real AWS -- only against local mocks and loopback.
+this path has run on AWS EC2 once (2026-10-23, see Status), but not under the
+automated test suite -- the tests use local mocks and loopback.
 The Terraform in `infra/` wires the same variables for the EC2 fleet.
 
-**Never run against this project's own results.** No AWS resources were ever
-provisioned for it (see [`docs/aws-batch-baseline.md`](docs/aws-batch-baseline.md)),
+**Not run against this project's own results.** The 2026-10-23 AWS deployment was
+not used for the benchmarks (see [`docs/aws-batch-baseline.md`](docs/aws-batch-baseline.md)),
 so every number in [`docs/results.md`](docs/results.md) is local.
 
 ---
@@ -658,7 +660,7 @@ memory a worker allocates.
 ## Testing
 
 ```
-637 passed
+641 passed
 ```
 
 | Suite | Tests | Covers |
@@ -699,7 +701,7 @@ memory a worker allocates.
 
 **Phase 1: 104. Phase 2 added 110. Phase 3 added 60. Phases 4–9 added 224.
 Total 498** — 401 unit, 73 integration, 24 failure. **The HTTP data plane, batch
-entry point and metrics work added 139 more: 637 total** — 532 unit, 81
+entry point and metrics work added 143 more: 641 total** — 535 unit, 82
 integration, 24 failure (collected count; all pass on Linux). No test has ever been
 deleted; the 16 Phase 1 scheduler tests were ported to the ordering/placement
 split with every assertion preserved. The Phase 3 additions
@@ -799,7 +801,7 @@ BLAS letting one job consume six cores.
 | 2 | Ordering/placement split, Static Resource-Aware, telemetry, decision traces + replay, benchmark harness | **done** |
 | 3 | adaptive-v1: telemetry-weighted placement, freshness handling, adaptive replay, algorithm versioning | **done** |
 | 4 | Reaper, timeouts, retries, idempotency, DLQ handling | **done** |
-| 5 | Terraform: EC2, SQS, DynamoDB, S3, CloudWatch, IAM | **code complete, never applied** |
+| 5 | Terraform: EC2, SQS, DynamoDB, S3, CloudWatch, IAM | **applied once (2026-10-23); exit criterion unmet** |
 | 6 | Operations dashboard (React + TS + Vite + Tailwind + Recharts) | **done** |
 | 7 | Benchmark framework | **done** |
 | 8 | AWS Batch baseline, or a documented refusal to publish an unfair one | **done — a refusal** |
@@ -807,9 +809,9 @@ BLAS letting one job consume six cores.
 
 **Phase 5 is the one with an unmet exit criterion**, and it is stated rather than
 rounded up. The criterion was *the same test suite green against
-`NIMBUS_BACKEND=aws`*; `terraform apply` was never run, so the AWS code path has
-never executed against the real services. `infra/` is complete and the adapters
-are covered by unit tests against hand-written fakes of the SQS, DynamoDB and S3
+`NIMBUS_BACKEND=aws`*. `terraform apply` was run once (2026-10-23) via
+`scripts/demo/deploy.sh` and the stack served jobs, but that suite has not been
+run against it. `infra/` is complete and the adapters are covered by unit tests against hand-written fakes of the SQS, DynamoDB and S3
 surfaces — which pins what we believe those semantics are, and is not the same
 as confirming it.
 
@@ -820,8 +822,9 @@ been added: the scheduler-side HTTP dispatcher and remote telemetry/liveness
 (`backend/services/metrics.py`); `infra/` was wired for the HTTP path and now
 passes `terraform fmt -check` and `terraform validate` (validate caught a real
 bug: `aws_batch_compute_environment` used `name`, which provider 5.x rejects).
-All of it is code-complete and tested locally, **none of it has run on AWS**, and
-the exit criterion above is exactly as unmet as before.
+All of it is code-complete and tested locally; the 2026-10-23 AWS deployment
+exercised the EC2/SQS/DynamoDB/S3 path (see Status), and the exit criterion
+above is still unmet.
 
 Still not built, and still deliberately: `docker-compose.yml`. The whole system
 is one process locally, and composing it would be theatre.
